@@ -1,0 +1,3 @@
+total_scenarios,valid_plan_rate,missing_responses,avg_input_tokens,avg_output_tokens,avg_response_length,model
+152,0.0,0,39.9078947368421,419.6118421052632,1943.8947368421052,llama4_maverick
+152,0.0,0,47.49342105263158,626.0,2875.4605263157896,qwen_2_5_7b
