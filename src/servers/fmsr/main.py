@@ -94,7 +94,10 @@ def _build_llm():
     from llm import LiteLLMBackend
 
     model_id = os.environ.get("FMSR_MODEL_ID", _DEFAULT_MODEL_ID)
-    if model_id.startswith("watsonx/"):
+    if model_id.startswith("gemini/"):
+        if not os.environ.get("GEMINI_API_KEY"):
+            raise RuntimeError("Missing env var: GEMINI_API_KEY")
+    elif model_id.startswith("watsonx/"):
         missing = [v for v in ("WATSONX_APIKEY", "WATSONX_PROJECT_ID") if not os.environ.get(v)]
         if missing:
             raise RuntimeError(f"Missing env vars for WatsonX: {missing}")

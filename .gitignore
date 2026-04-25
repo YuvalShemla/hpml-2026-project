@@ -203,3 +203,5 @@ mcp/servers/tsfm/artifacts/tsfm_models/
 
 .env
 .env.local
+credentials/
+claude_dumps/

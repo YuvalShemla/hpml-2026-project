@@ -1,226 +1,215 @@
-<div align="center">
+# HPML Group 20: Internalizing MCP Tool Knowledge in Small LLMs
 
-# AI Agents for Industrial Asset Operations & Maintenance
-
-![AssetOps](https://img.shields.io/badge/Domain-Asset_Operations-blue) 
-![MultiAgentBench](https://img.shields.io/badge/Domain-Multi--agent_Bench-blue) 
-![EMNLP 2025](https://img.shields.io/badge/EMNLP--2025-Accepted-blueviolet)
-![NeurIPS 2025](https://img.shields.io/badge/NeurIPS--2025-Accepted-blueviolet)
-![AAAI 2026](https://img.shields.io/badge/AAAI--2026-Accepted-blueviolet)
-
-**📘 Tutorials:** Learn more from our detailed guides —  
-[ReActXen IoT Agent (EMNLP 2025)](https://github.com/IBM/ReActXen/blob/main/docs/tutorial/ReActXen_IoT_Agent_EMNLP_2025.pdf) | 
-[FailureSensorIQ (NeurIPS 2025)](https://github.com/IBM/FailureSensorIQ) |
-[AssetOpsBench Lab (AAAI 2026)](https://ibm.github.io/AssetOpsBench/aaai_website/) |
-[Spiral (AAAI 2026)](https://github.com/IBM/SPIRAL) |
-[AssetOpsBench Technical Material](./docs/tutorial/AssetOpsBench_Technical_Material.pdf)
-
-📄 [Paper](https://arxiv.org/pdf/2506.03828) | 🤗 [HF-Dataset](https://huggingface.co/datasets/ibm-research/AssetOpsBench) | 📢 [IBM Blog](https://research.ibm.com/blog/asset-ops-benchmark) | 🤗 [HF Blog](https://huggingface.co/blog/ibm-research/assetopsbench-playground-on-hugging-face) | [Contributors](#contributors)
-
-[![Kaggle](https://img.shields.io/badge/Kaggle-Benchmark-blue?logo=kaggle&logoColor=white&style=flat-square)](https://www.kaggle.com/benchmarks/ibm-research/asset-ops-bench)
-[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Playground-orange?style=flat-square)](https://huggingface.co/spaces/ibm-research/AssetOps-Bench)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/IBM/AssetOpsBench/blob/main/notebook/LLM_Agent.ipynb)
-</div>
+**Course:** High Performance Machine Learning (Columbia, Spring 2026)
+**Team:** Group 20
+**Repo:** Fork of [IBM AssetOpsBench](https://github.com/IBM/AssetOpsBench)
 
 ---
 
-## 📢 Call for Scenario Contribution
-We are expanding **AssetOpsBench** to cover a broader range of industrial challenges. We invite researchers and practitioners to contribute new scenarios, particularly in the following areas:
+## Research Question
 
-* **Asset Classes:** Turbines, HVAC Systems, Pumps, Transformers, CNC Machines, Robotics, Engines, and so on.
-* **Task Domains:** Prognostics and Health Management, Remaining Useful Life (RUL) estimation, or Root Cause Analysis (RCA), Diagnostic Analysis and Predictive Maintenance.
+Can Gemma internalize AssetOpsBench tool descriptions well enough to reduce prompt cost without losing planning and execution quality, and which adaptation strategy handles newly added tools best: plain SFT, curriculum SFT, or modular continual LoRA?
 
-**How to contribute:**
-1.  **Define** your scenario following our [Utterance Guideline](https://github.com/IBM/AssetOpsBench/blob/extra_scenarios/experimental_scenarios/utterance_design_guideline.md), 
-[Ground Truth Guideline](https://github.com/IBM/AssetOpsBench/blob/extra_scenarios/experimental_scenarios/ground_truth_creation_best_practice.md)
+## Project Overview
 
-1.  **Explore** the [Hugging Face dataset](https://huggingface.co/datasets/ibm-research/AssetOpsBench) as examples.
-3.  **Submit** a Pull Request or open an [Issue](https://github.com/IBM/AssetOpsBench/issues) with the tag `new-scenario`.
-4. **Contact us** via email if any question:
-   * Dhaval Patel ([pateldha@us.ibm.com](mailto:pateldha@us.ibm.com))
-   * Nianjun Zhou ([jzhou@us.ibm.com](mailto:jzhou@us.ibm.com))
+We train **Gemma 4 E4B** via curriculum QLoRA to produce correct MCP tool-use plans **without tool descriptions in the prompt**. Currently, the plan-execute framework pays a ~2,400 token tax per query to include tool descriptions (~95% of plan call input). Fine-tuning internalizes the tool catalog, eliminating this overhead.
+
+**Benchmark:** [AssetOpsBench](https://arxiv.org/pdf/2506.03828) -- 141 core scenarios (99 single-agent + 42 multi-agent), 6 domain agents, 30+ tools.
 
 ---
 
-## Resources
-- **Video Overview:** [AssetOpsBench - AI Agents for Industrial Asset Operations & Maintenance](https://www.youtube.com/watch?v=kXmBDMrKFjs) by Reliability Odyssey.
-  
----
-
-## 📑 Table of Contents
-1. [Announcements](#announcements)
-2. [Introduction](#introduction)
-3. [Datasets](#datasets-140-scenarios)
-4. [AI Agents](#ai-agents)
-5. [Multi-Agent Frameworks](#multi-agent-frameworks)
-6. [System Diagram](#system-diagram)
-7. [Leaderboards](#leaderboards)
-8. [Docker Setup](#run-assetopsbench-in-docker)
-9. [Talks & Events](#talks--events)
-10. [External Resources](#external-resources)
-11. [Contributors](#contributors)
-
----
-
-## Announcements (Papers, Invited Talks, etc) 
-
-- 📊 **Dataset Update:** **AssetOpsBench** expanded to cover wider variety of 9 Asset classes (Chiller, AHU, Pump, Motor, Bearing, Engine, Rotors, Boilers, Turbine, etc.) and various Tasks (Remaining Useful Life, Fault Classification, Rule Monitoring, etc.) <br>![Hugging Face](https://img.shields.io/badge/HuggingFace-AssetOpsBench-yellow?logo=huggingface)
-[![Dataset](https://img.shields.io/badge/Dataset-ibm--research%2FAssetOpsBench-blue)](https://huggingface.co/datasets/ibm-research/AssetOpsBench)
-<br>Special Thanks to primary **Contributors:** 👥 [@DeveloperMindset123](https://github.com/DeveloperMindset123), [@ChathurangiShyalika](https://github.com/ChathurangiShyalika), [@Fabio-Lorenzi1](https://github.com/Fabio-Lorenzi1)
-
-- 📰 **AAAI-2026:** **SPIRAL: Symbolic LLM Planning via Grounded and Reflective Search** ![Authors](https://img.shields.io/badge/Authors-Y_Zhang,_G_Ganapavarapu,_S_Jayaraman,_B_Agrawal,_D_Patel,_A_Fokoue-lightgrey)  
-[![Code](https://img.shields.io/badge/Code-IBM%2FSPIRAL-blue?logo=github)](https://github.com/IBM/SPIRAL)
-
-- 🎯 **AAAI-2026 Lab:** **From Inception to Productization: Hands-on Lab for the Lifecycle of Multimodal Agentic AI in Industry 4.0**  
-[![Website](https://img.shields.io/badge/Website-Agents_for_Industry_4.0_Applications-brightgreen)](https://ibm.github.io/AssetOpsBench/aaai_website/)
-![Authors](https://img.shields.io/badge/Authors-Chathurangi_Shyalika,_Saumya_Ahuja,_Shuxin_Lin,_Ruwan_Wickramarachchi,_Dhaval_Patel,_Amit_Sheth-lightgrey)
-[![AAAI 2026 Slides](https://img.shields.io/badge/AAAI-Slides-red)](https://drive.google.com/file/d/16GaYxBQ2FsVqKpkKOU0PI_ZCTCsowenF/view?usp=sharing)
-
-- 📰 **AABA4ET/AAAI-2026:** **Agentic Code Generation for Heuristic Rules in Equipment Monitoring**
-![Authors](https://img.shields.io/badge/Authors-F_Lorenzi,_A_Langbridge,_F_O%27Donncha,_J_Rayfield,_B_Eck,_S_Rosato-lightgrey)
-
-- 📰 **IAAI/AAAI-2026:** **Diversity Meets Relevancy: Multi-Agent Knowledge Probing for Industry 4.0 Applications**
-![Authors](https://img.shields.io/badge/Authors-C_Constantinides,_D_Patel,_S_Kimbleton,_N_Garg,_M_Paracha-lightgrey)
-
-- 📰 **IAAI/AAAI-2026:** **Deployed AI Agents for Industrial Asset Management: CodeReAct Framework for Event Analysis and Work Order Automation**
-![Authors](https://img.shields.io/badge/Authors-N_Zhou,_D_Patel,_A_Bhattacharyya-lightgrey)
-  
-- 📰 **AAAI-2026 Demo:** **AssetOpsBench-Live: Privacy-Aware Online Evaluation of Multi-Agent Performance in Industrial Operations**   
-  ![Authors](https://img.shields.io/badge/Authors-Dhaval_C_Patel,_Nianjun_Zhou,_Shuxin_Lin,_James_T_Rayfield,_Chathurangi_Shyalika,_Suryanarayana_R_Yarrabothula-lightgrey)
-[![Demo Video](https://img.shields.io/badge/Demo-Video-red)](https://www.youtube.com/watch?v=JcKlS5v5fGY)
-
-- 📰 **NeurIPS-2025 Social — Evaluating Agentic Systems**  
-  **Talk:** *Building Reliable Agentic Benchmarks: Insights from AssetOpsBench*
-  **Total Registered Users:** *2000+*
-  [![Conference](https://img.shields.io/badge/Conference-NeurIPS_2025-4B0082)](#)  
-  [![Speaker](https://img.shields.io/badge/Speaker-Dhaval_C_Patel-lightgrey)](#)  
-  [![Attend on Luma](https://img.shields.io/badge/Attend_on_Luma-Click_to_Register-blue?logo=google-calendar)](https://luma.com/mkyyvypm?tk=AkGVp5)
-  
-- 🕓 **Past Event:** **2025-10-03** – 2-Hour Workshop: *AI Agents and Their Role in Industry 4.0 Applications*  
-  ![Event](https://img.shields.io/badge/Event-Workshop-lightblue) 
-  ![Host](https://img.shields.io/badge/Host-NJIT_ACM-brightgreen)
-  
-- 🏆 **Accepted Papers**: Parts of papers are accepted at **[NeurIPS 2025](https://nips.cc/)**, **[EMNLP 2025 Research Track](https://2025.emnlp.org/)**, and **[EMNLP 2025 Industry Track](https://2025.emnlp.org/)**.  
-- 🚀 **2025-09-01**: [CODS 2025](https://ikdd.acm.org/cods-2025/) Competition launched – Access **AI Agentic Challenge** [AssetOpsBench-Live](https://www.codabench.org/competitions/10206/).  
-- 📦 **2025-06-01**: AssetOpsBench v1.0 released with **141 industrial Scenarios**.  
-
-✨ Stay tuned for new tracks, competitions, and community events.
-
----
-
-## Introduction
-AssetOpsBench is a **unified framework for developing, orchestrating, and evaluating domain-specific AI agents** in industrial asset operations and maintenance.  
-
-It provides:
-- 4 **domain-specific agents**  
-- 2 **multi-agent orchestration frameworks**  
-
-Designed for **maintenance engineers, reliability specialists, and facility planners**, it allows reproducible evaluation of multi-step workflows in simulated industrial environments.
-
----
-
-## Datasets: 141 Scenarios
-AssetOpsBench scenarios span multiple domains:  
-
-| Domain | Example Task |
-|--------|--------------|
-| IoT | "List all sensors of Chiller 6 in MAIN site" |
-| FSMR | "Identify failure modes detected by Chiller 6 Supply Temperature" |
-| TSFM | "Forecast 'Chiller 9 Condenser Water Flow' for the week of 2020-04-27" |
-| WO | "Generate a work order for Chiller 6 anomaly detection" |
-
-Some tasks focus on a **single domain**, others are **multi-step end-to-end workflows**.  
-Explore all scenarios [HF-Dataset](https://huggingface.co/datasets/ibm-research/AssetOpsBench).
-
----
-
-## AI Agents
-### Domain-Specific Agents (Important tools)
-- **IoT Agent**: `get_sites`, `get_history`, `get_assets`, `get_sensors`  
-- **FMSR Agent**: `get_sensors`, `get_failure_modes`, `get_failure_sensor_mapping`  
-- **TSFM Agent**: `forecasting`, `timeseries_anomaly_detection`  
-- **WO Agent**: `generate_work_order`  
-
-### Multi-Agent Frameworks (Blue Prints)
-- **[MetaAgent](https://github.com/IBM/AssetOpsBench/tree/main/src/meta_agent)**: reAct-based single-agent-as-tool orchestration
-- **[AgentHive](https://github.com/IBM/AssetOpsBench/tree/main/src/agent_hive)**: plan-and-execute sequential workflow
-
-### MCP Environment
-The `src/` directory contains MCP servers and a plan-execute runner built on the [Model Context Protocol](https://modelcontextprotocol.io/).
-See **[INSTRUCTIONS.md](./INSTRUCTIONS.md)** for setup, usage, and testing.
-
----
-
-## Leaderboards
-- Evaluated with **7 Large Language Models**  
-- Trajectories scored using **LLM Judge (Llama-4-Maverick-17B)**  
-- **6-dimensional criteria** measure reasoning, execution, and data handling  
-
-Example: MetaAgent leaderboard  
-
-![meta_agent_leaderboard](https://github.com/user-attachments/assets/615059be-e296-40d3-90ec-97ee6cb00412)
-
----
-
-## Run AssetOpsBench in Docker
-- Please Refer to the 
-- Pre-built Docker Images: `assetopsbench-basic` (minimal) & `assetopsbench-extra` (full)  
-- Conda environment: `assetopsbench`  
-- [Full setup guide](https://github.com/IBM/AssetOpsBench/tree/main/benchmark/README.md)  
+## Quick Start
 
 ```bash
-cd /path/to/AssetOpsBench
-chmod +x benchmark/entrypoint.sh
-docker-compose -f benchmark/docker-compose.yml build
-docker-compose -f benchmark/docker-compose.yml up
+# 1. Install dependencies
+uv sync
+
+# 2. Configure environment
+cp .env.public .env
+# Edit .env: add GEMINI_API_KEY (required), OPENROUTER_API_KEY (optional)
+
+# 3. Start CouchDB (required for IoTAgent tools)
+docker compose -f src/couchdb/docker-compose.yaml up -d
+
+# 4. Run a single query
+uv run plan-execute --model-id "gemini/gemma-4-26b-a4b-it" --show-plan "What IoT sites are available?"
 ```
 
 ---
 
-## External Resources
-- 📄 **Paper**: [AssetOpsBench: Benchmarking AI Agents for Industrial Asset Operations](https://arxiv.org/pdf/2506.03828)  
-- 🤗 **HuggingFace**: [Scenario & Model Hub](https://huggingface.co/papers/2506.03828)  
-- 📢 **Blog**: [Insights, Tutorials, and Updates](https://research.ibm.com/blog/asset-ops-benchmark)  
-- 🎥 **Recorded Talks**: Link coming soon.
+## Three Studies
+
+### Study 1: Tool-Description Internalization
+Evaluate on 141 core scenarios in three inference settings:
+1. **Full tool manual** in prompt (current baseline)
+2. **Compressed tool cards** in prompt
+3. **No tool descriptions** in prompt (target)
+
+Planning-only first, then full MCP execution.
+
+### Study 2: Curriculum vs Non-Curriculum Tuning
+
+| Regime | Target |
+|--------|--------|
+| Plan-SFT baseline | scenario + tool inventory -> planning_steps |
+| Plan+execution SFT | -> planning_steps + execution_steps + execution_links |
+| Curriculum Stage A | Tool taxonomy and ownership |
+| Curriculum Stage B | Tool selection and argument prediction |
+| Curriculum Stage C | Full plan generation |
+| Curriculum Stage D | Plan + execution traces |
+| Curriculum Stage E | Clarification / abstention / insufficient-data |
+
+### Study 3: Continual Learning
+- **Hold-one-tool-family-out:** Train without Vibration server, then adapt. Measure retention + acquisition.
+- **Core-to-expanded:** Train on 141 core scenarios, adapt to new asset classes (compressor, hydraulic, PHM).
 
 ---
 
-[![Star History Chart](https://api.star-history.com/svg?repos=IBM/AssetOpsBench&type=Date)](https://star-history.com/#IBM/AssetOpsBench&Date)
+## Running Evaluations
 
+### Track 1: Plan Quality (141+ scenarios)
+```bash
+# Gemini 2.5 Flash (generates gold reference plans)
+uv run python benchmark/baseline_tests/run_gemini_track1.py
+
+# Small models via Gemini API / OpenRouter
+uv run python benchmark/baseline_tests/run_both_models_informed.py --model gemma_3_4b
+```
+
+### Plan Quality Evaluation
+```bash
+# Structural only (fast, free)
+uv run python benchmark/baseline_tests/evaluate_plan_quality.py \
+    --candidate benchmark/baseline_tests/gemma_4_26b_a4b_informed_results.json \
+    --mode structural
+
+# Structural + LLM judge (~$0.10)
+uv run python benchmark/baseline_tests/evaluate_plan_quality.py \
+    --candidate benchmark/baseline_tests/gemma_4_26b_a4b_informed_results.json \
+    --mode all
+```
+
+### E2E Execution with Token Tracking
+```bash
+uv run python benchmark/baseline_tests/run_gemma4_e2e.py
+```
+
+### Dashboard
+```bash
+uv run python benchmark/baseline_tests/build_dashboard.py
+open benchmark/baseline_tests/gemma4_e2e_dashboard.html
+```
+
+Shows per-scenario pipeline visualization, token breakdowns, gold vs model plan comparison. See [DASHBOARD_GUIDE.md](benchmark/baseline_tests/DASHBOARD_GUIDE.md).
 
 ---
 
-## Contributors
+## Full Tool Inventory
 
-Thanks goes to these wonderful people ✨
-
-<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
-<!-- prettier-ignore-start -->
-<!-- markdownlint-disable -->
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/DhavalRepo18"><img src="https://github.com/DhavalRepo18.png?s=50" width="50px;" alt="DhavalRepo18"/><br /><sub><b>DhavalRepo18</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=DhavalRepo18" title="Code">💻</a> <a href="https://github.com/IBM/AssetOpsBench/commits?author=DhavalRepo18" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ShuxinLin"><img src="https://github.com/ShuxinLin.png?s=50" width="50px;" alt="ShuxinLin"/><br /><sub><b>ShuxinLin</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=ShuxinLin" title="Code">💻</a> <a href="https://github.com/IBM/AssetOpsBench/commits?author=ShuxinLin" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/jtrayfield"><img src="https://github.com/jtrayfield.png?s=50" width="50px;" alt="jtrayfield"/><br /><sub><b>jtrayfield</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=jtrayfield" title="Code">💻</a> <a href="https://github.com/IBM/AssetOpsBench/commits?author=jtrayfield" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/nianjunz"><img src="https://github.com/nianjunz.png?s=50" width="50px;" alt="nianjunz"/><br /><sub><b>nianjunz</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=nianjunz" title="Code">💻</a> <a href="https://github.com/IBM/AssetOpsBench/commits?author=nianjunz" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ChathurangiShyalika"><img src="https://github.com/ChathurangiShyalika.png?s=50" width="50px;" alt="ChathurangiShyalika"/><br /><sub><b>ChathurangiShyalika</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=ChathurangiShyalika" title="Code">💻</a> <a href="https://github.com/IBM/AssetOpsBench/commits?author=ChathurangiShyalika" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/PUSHPAK-JAISWAL"><img src="https://github.com/PUSHPAK-JAISWAL.png?s=50" width="50px;" alt="PUSHPAK-JAISWAL"/><br /><sub><b>PUSHPAK-JAISWAL</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=PUSHPAK-JAISWAL" title="Code">💻</a> <a href="https://github.com/IBM/AssetOpsBench/commits?author=PUSHPAK-JAISWAL" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/bradleyjeck"><img src="https://github.com/bradleyjeck.png?s=50" width="50px;" alt="bradleyjeck"/><br /><sub><b>bradleyjeck</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=bradleyjeck" title="Code">💻</a> <a href="https://github.com/IBM/AssetOpsBench/commits?author=bradleyjeck" title="Documentation">📖</a></td>
-    </tr>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/florenzi002"><img src="https://github.com/florenzi002.png?s=50" width="50px;" alt="florenzi002"/><br /><sub><b>florenzi002</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=florenzi002" title="Code">💻</a> <a href="https://github.com/IBM/AssetOpsBench/commits?author=florenzi002" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/kushwaha001"><img src="https://github.com/kushwaha001.png?s=50" width="50px;" alt="kushwaha001"/><br /><sub><b>kushwaha001</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=kushwaha001" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://mohit-gupta.me/"><img src="https://avatars.githubusercontent.com/u/52665879?v=4?s=50" width="50px;" alt="Mohit Gupta"/><br /><sub><b>Mohit Gupta</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=Mohit-15" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/DeveloperMindset123"><img src="https://avatars.githubusercontent.com/u/109440738?v=4?s=50" width="50px;" alt="Ayan Das"/><br /><sub><b>Ayan Das</b></sub></a><br /><a href="https://github.com/IBM/AssetOpsBench/commits?author=DeveloperMindset123" title="Documentation">📖</a> <a href="https://github.com/IBM/AssetOpsBench/commits?author=DeveloperMindset123" title="Code">💻</a></td>
-    </tr>
-  </tbody>
-</table>
-
-<!-- markdownlint-restore -->
-<!-- prettier-ignore-end -->
-
-<!-- ALL-CONTRIBUTORS-LIST:END -->
+| Agent | Tools | In Our Repo |
+|-------|-------|-------------|
+| **IoTAgent** | sites, assets, sensors, history | Yes |
+| **FMSRAgent** | get_failure_modes, get_failure_mode_sensor_mapping | Yes |
+| **TSFMAgent** | get_ai_tasks, get_tsfm_models, run_tsfm_forecasting, run_tsfm_finetuning, run_tsad, run_integrated_tsad | Yes |
+| **Utilities** | json_reader, current_date_time, current_time_english | Yes |
+| **WorkOrder** | get_work_orders, get_preventive/corrective_work_orders, get_events, get_failure_codes, get_work_order_distribution, predict_next_work_order, analyze_alert_to_failure | Upstream only |
+| **Vibration** | get_vibration_data, list_vibration_sensors, compute_fft_spectrum, compute_envelope_spectrum, assess_vibration_severity, calculate_bearing_frequencies, list_known_bearings, diagnose_vibration | Upstream only (ideal for continual-learning) |
 
 ---
 
+## Metrics
+
+### Paper's Core 3 (rubric-based LLM judge)
+Task Completion, Data Retrieval Accuracy, Result Verification
+
+### Plan Alignment
+ROUGE-1/2/L/Lsum, BERTScore + ROUGE-L combined
+
+### Our Structural Metrics (automated, free)
+Agent-Tool pair F1 (30%), Tool set F1 (20%), Agent set F1 (15%), Tool sequence match (15%), Arg key overlap (10%), Efficiency penalty (10%)
+
+### Token Efficiency
+Tool description tokens per plan call, token reduction vs full-manual baseline, total tokens per scenario
+
+---
+
+## Baseline Results (Informed Mode)
+
+| Model | Active Params | Structural | Judge | Valid Plans |
+|-------|--------------|-----------|-------|-------------|
+| Gemini 2.5 Flash (gold) | ~100B+ | 1.000 | 5.00/5.0 | 148/152 |
+| Gemma 4 26B-A4B (MoE) | 3.8B | 0.811 | 4.54/5.0 | 55/55 |
+| Llama 3.1 8B | 8B | 0.696 | 3.82/5.0 | 12/12 |
+| Gemma 3n E4B | 4.5B | 0.502 | 3.38/5.0 | 152/152 |
+
+**All models score 0% in blind mode.** Paper's single-agent baseline: 26.95% task completion.
+
+Detailed reports: [docs/reports/](docs/reports/)
+
+---
+
+## Training Data (3 datasets)
+
+1. **Tool knowledge:** tool existence, ownership, arguments, routing, hard negatives
+2. **Planning:** scenario -> concise planning_steps
+3. **Execution-structured:** scenario -> planning_steps + execution_steps + execution_links
+
+Plus clarification / abstention / insufficient-data examples. Never leak eval scenarios into training.
+
+```bash
+# Existing SFT generation script
+uv run python benchmark/generate_data/generate_sft_dataset.py
+```
+
+Gold plans: `benchmark/baseline_tests/gemini_flash_informed_results.json` (148 valid)
+
+---
+
+## Model & Training
+
+- **Primary:** Gemma 4 E4B (instruction-tuned) + QLoRA
+- **Stack:** HuggingFace Transformers + PEFT + TRL + bitsandbytes
+- **Hardware:** 1x H100
+- **Secondary:** Gemma 4 26B A4B (MoE) if Study 1 succeeds
+
+---
+
+## Architecture
+
+```
+Question -> DISCOVER (MCP) -> PLAN (LLM) -> EXECUTE (MCP tools) -> SUMMARIZE (LLM) -> Answer
+                                 ^
+                                 |
+                    Tool descriptions in prompt (~2,268 tokens)
+                    THIS IS WHAT FINE-TUNING ELIMINATES
+```
+
+---
+
+## Repository Structure
+
+```
+hpml_group_20/
+├── src/
+│   ├── llm/                    # LLM backend (litellm routing)
+│   ├── workflow/                # Plan-execute runner (planner, executor, runner, CLI)
+│   ├── servers/                 # 4 MCP servers (iot, fmsr, tsfm, utilities)
+│   └── couchdb/                # Docker compose for CouchDB
+├── benchmark/
+│   ├── baseline_tests/         # Eval scripts, results JSON, dashboard builder
+│   ├── generate_data/          # SFT training data generation
+│   └── cods_track1/            # Planning benchmark (Docker)
+├── docs/reports/               # Detailed baseline reports
+├── INSTRUCTIONS.md             # Full setup guide
+├── CLAUDE.md                   # Project instructions for Claude Code
+└── .env.public                 # Environment template
+```
+
+---
+
+## Links
+
+- [AssetOpsBench Paper](https://arxiv.org/pdf/2506.03828)
+- [HuggingFace Dataset](https://huggingface.co/datasets/ibm-research/AssetOpsBench)
+- [IBM AssetOpsBench Repo](https://github.com/IBM/AssetOpsBench)
+- [Gemma Tuning Guide](https://ai.google.dev/gemma/docs/lora_tuning)

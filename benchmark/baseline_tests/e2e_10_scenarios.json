@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "prompt": "What IoT sites are available?",
+    "gold_steps": 1,
+    "gold_response": "#Task1: Retrieve the list of available IoT sites.\n#Agent1: IoTAgent\n#Tool1: sites\n#Args1: {}\n#Dependency1: None\n#ExpectedOutput1: A list of site names."
+  },
+  {
+    "id": 3,
+    "prompt": "What assets can be found at the MAIN site?",
+    "gold_steps": 1,
+    "gold_response": "#Task1: Retrieve a list of assets for the \"MAIN\" site.\n#Agent1: IoTAgent\n#Tool1: assets\n#Args1: {\"site_name\": \"MAIN\"}\n#Dependency1: None\n#ExpectedOutput1: A list of assets, each with an id and a name, located at the \"MAIN\" site."
+  },
+  {
+    "id": 6,
+    "prompt": "Get the asset details for Chiller 9 at the MAIN site.",
+    "gold_steps": 2,
+    "gold_response": "#Task1: Retrieve all assets for the 'MAIN' site.\n#Agent1: IoTAgent\n#Tool1: assets\n#Args1: {\"site_name\": \"MAIN\"}\n#Dependency1: None\n#ExpectedOutput1: A list of assets, each with an 'id' and 'name'.\n\n#Task2: Extract the asset ID for the asset named \"Chiller 9\" from the list of assets.\n#Agent2: none\n#Tool2: none\n#Args2: {\"assets_list\": \"{step_1}\"}\n#Dependency2: #S1\n#ExpectedOutput2: The asset ID for \"Chiller 9\"."
+  },
+  {
+    "id": 8,
+    "prompt": "Download sensor data for Chiller 6's Tonnage from the last week of 2020 at the MAIN site",
+    "gold_steps": 2,
+    "gold_response": "#Task1: Retrieve the list of assets for the 'MAIN' site to find the ID of 'Chiller 6'.\n#Agent1: IoTAgent\n#Tool1: assets\n#Args1: {\"site_name\": \"MAIN\"}\n#Dependency1: None\n#ExpectedOutput1: A list of assets, including their IDs and names, for the 'MAIN' site.\n\n#Task2: Download historical sensor data for 'Chiller 6' at the 'MAIN' site for the last week of 2020 (December 25, 2020, to December 31, 2020).\n#Agent2: IoTAgent\n#Tool2: history\n#Args2: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_1}\", \"start\": \"2020-12-25\", \"final\": \"2020-12-31\"}\n#Dependency2: #S1\n#ExpectedOutput2: A list of historical sensor values for 'Chiller 6', including 'Tonnage', for the specified date range."
+  },
+  {
+    "id": 5,
+    "prompt": "Retrieve metadata for Chiller 6 located at the MAIN site.",
+    "gold_steps": 3,
+    "gold_response": "#Task1: Retrieve all assets for the 'MAIN' site to identify the specific asset ID for 'Chiller 6'.\n#Agent1: IoTAgent\n#Tool1: assets\n#Args1: {\"site_name\": \"MAIN\"}\n#Dependency1: None\n#ExpectedOutput1: A list of assets, each with an 'id' and 'name'. The system will extract the 'id' corresponding to the asset named 'Chiller 6' from this list.\n\n#Task2: List all sensors associated with 'Chiller 6' at the 'MAIN' site using its asset ID.\n#Agent2: IoTAgent\n#Tool2: sensors\n#Args2: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_1}\"}\n#Dependency2: #S1\n#ExpectedOutput2: A list of sensors available for 'Chiller 6'.\n\n#Task3: Retrieve the known failure modes for 'Chiller 6'.\n#Agent3: FMSRAgent\n#Tool3: get_failure_modes\n#Args3: {\"asset_name\": \"Chiller 6\"}\n#Dependency3: None\n#ExpectedOutput3: A list of known failure modes for 'Chiller 6'."
+  },
+  {
+    "id": 9,
+    "prompt": "Retrieve sensor data for Chiller 6's % Loaded from June 2020 at MAIN.",
+    "gold_steps": 3,
+    "gold_response": "#Task1: Retrieve the asset ID for \"Chiller 6\" at the \"MAIN\" site.\n#Agent1: IoTAgent\n#Tool1: assets\n#Args1: {\"site_name\": \"MAIN\"}\n#Dependency1: None\n#ExpectedOutput1: A list of assets, from which the ID for \"Chiller 6\" will be extracted.\n\n#Task2: Retrieve the sensor ID for \"% Loaded\" for the asset \"Chiller 6\" at the \"MAIN\" site.\n#Agent2: IoTAgent\n#Tool2: sensors\n#Args2: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_1}\"}\n#Dependency2: #S1\n#ExpectedOutput2: A list of sensors for \"Chiller 6\", from which the ID for \"% Loaded\" will be extracted.\n\n#Task3: Retrieve historical sensor data for \"Chiller 6\" at \"MAIN\" for the month of June 2020.\n#Agent3: IoTAgent\n#Tool3: history\n#Args3: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_1}\", \"start\": \"2020-06-01T00:00:00Z\", \"final\": \"2020-06-30T23:59:59Z\"}\n#Dependency3: #S1\n#ExpectedOutput3: Historical sensor values for all sensors of \"Chiller 6\" for June 2020, including \"% Loaded\"."
+  },
+  {
+    "id": 7,
+    "prompt": "Download the metadata for Chiller 3 at the MAIN facility.",
+    "gold_steps": 4,
+    "gold_response": "#Task1: Retrieve all assets at the 'MAIN' facility to identify 'Chiller 3'.\n#Agent1: IoTAgent\n#Tool1: assets\n#Args1: {\"site_name\": \"MAIN\"}\n#Dependency1: None\n#ExpectedOutput1: A list of assets, each with an 'id' and 'name', for the 'MAIN' facility.\n\n#Task2: Extract the asset ID for 'Chiller 3' from the list of assets obtained in the previous step.\n#Agent2: none\n#Tool2: none\n#Args2: none\n#Dependency2: #S1\n#ExpectedOutput2: The asset ID for 'Chiller 3'.\n\n#Task3: Retrieve the list of sensors associated with 'Chiller 3' using its asset ID.\n#Agent3: IoTAgent\n#Tool3: sensors\n#Args3: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_2}\"}\n#Dependency3: #S2\n#ExpectedOutput3: A list of sensors available for 'Chiller 3'.\n\n#Task4: Retrieve the known failure modes for 'Chiller 3'.\n#Agent4: FMSRAgent\n#Tool4: get_failure_modes\n#Args4: {\"asset_name\": \"Chiller 3\"}\n#Dependency4: None\n#ExpectedOutput4: A list of known failure modes for 'Chiller 3'."
+  },
+  {
+    "id": 114,
+    "prompt": "What are the failure modes of Chiller 6 that can be identified by analyzing the data from the available sensors?",
+    "gold_steps": 4,
+    "gold_response": "#Task1: Retrieve the list of assets for the \"MAIN\" site to find \"Chiller 6\" and its corresponding asset ID.\n#Agent1: IoTAgent\n#Tool1: assets\n#Args1: {\"site_name\": \"MAIN\"}\n#Dependency1: None\n#ExpectedOutput1: A list of assets, including their IDs and names, from which the asset ID for \"Chiller 6\" will be extracted.\n\n#Task2: Get the list of all available sensors for \"Chiller 6\" using its asset ID and site name.\n#Agent2: IoTAgent\n#Tool2: sensors\n#Args2: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_1}\"}\n#Dependency2: #S1\n#ExpectedOutput2: A list of sensor objects associated with \"Chiller 6\".\n\n#Task3: Identify the known failure modes for \"Chiller 6\".\n#Agent3: FMSRAgent\n#Tool3: get_failure_modes\n#Args3: {\"asset_name\": \"Chiller 6\"}\n#Dependency3: None\n#ExpectedOutput3: A list of known failure mode strings for \"Chiller 6\".\n\n#Task4: Determine which of the identified failure modes can be detected by the available sensors of \"Chiller 6\".\n#Agent4: FMSRAgent\n#Tool4: get_failure_mode_sensor_mapping\n#Args4: {\"asset_name\": \"Chiller 6\", \"failure_modes\": \"{step_3}\", \"sensors\": \"{step_2}\"}\n#Dependency4: #S2, #S3\n#ExpectedOutput4: A bidirectional mapping showing which failure modes can be detected by which sensors, along with relevancy details."
+  },
+  {
+    "id": 10,
+    "prompt": "Get sensor data for both Chiller 6 and Chiller 9's Tonnage from first week of June 2020 at MAIN in a single file.",
+    "gold_steps": 5,
+    "gold_response": "#Task1: Retrieve all assets at the 'MAIN' site to identify 'Chiller 6' and 'Chiller 9'.\n#Agent1: IoTAgent\n#Tool1: assets\n#Args1: {\"site_name\": \"MAIN\"}\n#Dependency1: None\n#ExpectedOutput1: A list of assets, each with an 'id' and 'name'.\n\n#Task2: From the list of assets, find the 'asset_id' for the asset named 'Chiller 6'.\n#Agent2: none\n#Tool2: none\n#Args2: {}\n#Dependency2: #S1\n#ExpectedOutput2: The 'asset_id' for 'Chiller 6'.\n\n#Task3: From the list of assets, find the 'asset_id' for the asset named 'Chiller 9'.\n#Agent3: none\n#Tool3: none\n#Args3: {}\n#Dependency3: #S1\n#ExpectedOutput3: The 'asset_id' for 'Chiller 9'.\n\n#Task4: Retrieve all historical sensor values for 'Chiller 6' at 'MAIN' site from '2020-06-01' to '2020-06-07'. The 'history' tool returns data for all sensors of the specified asset, so 'Tonnage' will be included in the output.\n#Agent4: IoTAgent\n#Tool4: history\n#Args4: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_2}\", \"start\": \"2020-06-01\", \"final\": \"2020-06-07\"}\n#Dependency4: #S2\n#ExpectedOutput4: A list of historical sensor values for Chiller 6, including data for 'Tonnage'.\n\n#Task5: Retrieve all historical sensor values for 'Chiller 9' at 'MAIN' site from '2020-06-01' to '2020-06-07'. The 'history' tool returns data for all sensors of the specified asset, so 'Tonnage' will be included in the output.\n#Agent5: IoTAgent\n#Tool5: history\n#Args5: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_3}\", \"start\": \"2020-06-01\", \"final\": \"2020-06-07\"}\n#Dependency5: #S3\n#ExpectedOutput5: A list of historical sensor values for Chiller 9, including data for 'Tonnage'."
+  },
+  {
+    "id": 113,
+    "prompt": " If Evaporator Water side fouling occurs for Chiller 6, which sensor is most relevant for monitoring this specific failure?",
+    "gold_steps": 5,
+    "gold_response": "#Task1: Retrieve a list of all available sites to identify the operational context.\n#Agent1: IoTAgent\n#Tool1: sites\n#Args1: {}\n#Dependency1: None\n#ExpectedOutput1: A list of site names (e.g., [\"MAIN\", \"EAST\", \"WEST\"]).\n\n#Task2: Retrieve a list of assets for the first identified site to locate \"Chiller 6\".\n#Agent2: IoTAgent\n#Tool2: assets\n#Args2: {\"site_name\": \"{step_1[0]}\"}\n#Dependency2: #S1\n#ExpectedOutput2: A list of assets, each with an id and a name (e.g., [{\"id\": \"asset123\", \"name\": \"Chiller 6\"}, {\"id\": \"asset456\", \"name\": \"AHU 1\"}]).\n\n#Task3: Extract the asset ID for \"Chiller 6\" from the list of assets.\n#Agent3: none\n#Tool3: none\n#Args3: {}\n#Dependency3: #S2\n#ExpectedOutput3: The asset ID string for \"Chiller 6\" (e.g., \"asset123\").\n\n#Task4: List all sensors available for \"Chiller 6\" at the identified site.\n#Agent4: IoTAgent\n#Tool4: sensors\n#Args4: {\"site_name\": \"{step_1[0]}\", \"asset_id\": \"{step_3}\"}\n#Dependency4: #S1, #S3\n#ExpectedOutput4: A list of sensors for \"Chiller 6\" (e.g., [\"Evaporator_Water_In_Temp\", \"Evaporator_Water_Out_Temp\", \"Refrigerant_Pressure_Suction\", ...]).\n\n#Task5: Determine which of the listed sensors are most relevant for detecting \"Evaporator Water side fouling\" on \"Chiller 6\".\n#Agent5: FMSRAgent\n#Tool5: get_failure_mode_sensor_mapping\n#Args5: {\"asset_name\": \"Chiller 6\", \"failure_modes\": [\"Evaporator Water side fouling\"], \"sensors\": \"{step_4}\"}\n#Dependency5: #S4\n#ExpectedOutput5: A bidirectional mapping of failure modes to sensors, indicating relevancy, and per-pair relevancy details, highlighting the most relevant sensor(s)."
+  }
+]
