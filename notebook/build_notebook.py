@@ -128,8 +128,8 @@ if not HF_TOKEN:
         print("You need to accept the Gemma license at https://huggingface.co/google/gemma-3-4b-it")
 
 # ── GitHub Repo ───────────────────────────────────────────────────────
-REPO_URL = "https://github.com/AyalYakobe/AssetOpsBenchGroup20.git"
-REPO_DIR = "/content/AssetOpsBenchGroup20"
+REPO_URL = "https://github.com/YuvalShemla/hpml-2026-project.git"
+REPO_DIR = "/content/hpml-2026-project"
 
 # ── QLoRA ─────────────────────────────────────────────────────────────
 LORA_R = 32
