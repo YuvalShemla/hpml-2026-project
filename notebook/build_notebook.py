@@ -504,15 +504,18 @@ def run_evaluation(model, tokenizer, scenarios, prompt_template, mode_name, tool
 
         # Tokenize
         chat = [{"role": "user", "content": prompt}]
-        input_ids = tokenizer.apply_chat_template(
-            chat, return_tensors="pt", add_generation_prompt=True
-        ).to(model.device)
+        tokenized = tokenizer.apply_chat_template(
+            chat, return_tensors="pt", add_generation_prompt=True, return_dict=True,
+        )
+        input_ids = tokenized["input_ids"].to(model.device)
+        attention_mask = tokenized["attention_mask"].to(model.device)
         input_len = input_ids.shape[1]
 
         # Generate
         with torch.no_grad():
             output_ids = model.generate(
-                input_ids,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
                 max_new_tokens=MAX_NEW_TOKENS,
                 temperature=TEMPERATURE,
                 top_p=TOP_P,
