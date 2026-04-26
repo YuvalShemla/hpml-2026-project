@@ -110,10 +110,13 @@ if torch.cuda.is_available():
 All hyperparameters in one place. Change the model ID here to experiment with different models."""))
 
     cells.append(code("""# ── Model ─────────────────────────────────────────────────────────────
-MODEL_ID = "google/gemma-3-4b-it"  # 4B params, fits easily on H100
-# Alternatives:
-# MODEL_ID = "google/gemma-3-12b-it"  # 12B dense, still fits on H100 with QLoRA
+MODEL_ID = "google/gemma-3-4b-it"   # 4.5B params, proven QLoRA support
+# MODEL_ID = "google/gemma-4-E4B-it"  # 4.5B params (2.3B effective), newest arch — use LOAD_IN_8BIT=True
+# MODEL_ID = "google/gemma-3-12b-it"  # 12B dense, still fits on H100
 # MODEL_ID = "google/gemma-3-1b-it"   # 1B, fastest for debugging
+
+# Quantization: 4-bit for Gemma 3, 8-bit for Gemma 4 (4-bit has a known bnb bug for Gemma 4)
+LOAD_IN_8BIT = False  # Set True for Gemma 4 models
 
 # HuggingFace token (required for Gemma gated models)
 # Get yours at https://huggingface.co/settings/tokens
@@ -125,7 +128,7 @@ if not HF_TOKEN:
         print(f"Loaded HF_TOKEN from Colab secrets")
     except Exception:
         print("WARNING: No HF_TOKEN found. Set it above or in Colab secrets.")
-        print("You need to accept the Gemma license at https://huggingface.co/google/gemma-3-4b-it")
+        print(f"You need to accept the Gemma license at https://huggingface.co/{MODEL_ID}")
 
 # ── GitHub Repo ───────────────────────────────────────────────────────
 REPO_URL = "https://github.com/YuvalShemla/hpml-2026-project.git"
@@ -583,15 +586,20 @@ def print_summary(summary):
 
     cells.append(code("""from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
-# 4-bit quantization config
-bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16,
-    bnb_4bit_use_double_quant=True,
-)
+# Quantization config — 4-bit for Gemma 3, 8-bit for Gemma 4
+if LOAD_IN_8BIT:
+    bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+    quant_label = "8-bit"
+else:
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_use_double_quant=True,
+    )
+    quant_label = "4-bit NF4"
 
-print(f"Loading {MODEL_ID} in 4-bit...")
+print(f"Loading {MODEL_ID} in {quant_label}...")
 t0 = time.time()
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=HF_TOKEN)
@@ -601,7 +609,7 @@ model = AutoModelForCausalLM.from_pretrained(
     device_map="auto",
     torch_dtype=torch.bfloat16,
     token=HF_TOKEN,
-    attn_implementation="eager",  # sdpa can cause issues with some models during generation
+    attn_implementation="eager",
 )
 
 # Ensure pad token
@@ -613,7 +621,8 @@ elapsed = time.time() - t0
 mem_used = torch.cuda.max_memory_allocated() / 1e9
 print(f"Model loaded in {elapsed:.1f}s")
 print(f"GPU memory used: {mem_used:.1f} GB")
-print(f"Model parameters: {sum(p.numel() for p in model.parameters()) / 1e9:.1f}B")"""))
+print(f"Model parameters: {sum(p.numel() for p in model.parameters()) / 1e9:.1f}B")
+print(f"Quantization: {quant_label}")"""))
 
     # ══════════════════════════════════════════════════════════════════════
     # SECTION 8: BASELINE — INFORMED MODE
@@ -711,6 +720,23 @@ lora_config = LoraConfig(
 
 # Apply LoRA
 model = get_peft_model(model, lora_config)
+
+# ── Gemma 3 fix: inject token_type_ids during training ────────────
+# Gemma 3 multimodal arch requires token_type_ids in forward().
+# For text-only training, these should be all zeros.
+# See: https://github.com/huggingface/trl/issues/5032
+_original_forward = model.forward.__wrapped__ if hasattr(model.forward, '__wrapped__') else model.forward
+
+def _patched_forward(*args, **kwargs):
+    if "input_ids" in kwargs and "token_type_ids" not in kwargs:
+        kwargs["token_type_ids"] = torch.zeros_like(kwargs["input_ids"])
+    elif len(args) > 0 and "token_type_ids" not in kwargs:
+        # input_ids is the first positional arg
+        kwargs["token_type_ids"] = torch.zeros_like(args[0])
+    return _original_forward(*args, **kwargs)
+
+model.forward = _patched_forward
+print("Applied Gemma 3 token_type_ids patch for text-only training")
 
 trainable, total = model.get_nb_trainable_parameters()
 print(f"Trainable parameters: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
