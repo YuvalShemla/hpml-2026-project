@@ -784,7 +784,6 @@ sft_config = SFTConfig(
     warmup_ratio=WARMUP_RATIO,
     weight_decay=WEIGHT_DECAY,
     bf16=BF16,
-    max_seq_length=MAX_SEQ_LENGTH,
     logging_steps=10,
     eval_strategy="steps",
     eval_steps=50,
@@ -806,6 +805,7 @@ trainer = SFTTrainer(
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
     processing_class=tokenizer,
+    max_seq_length=MAX_SEQ_LENGTH,
 )
 
 print(f"Training config:")
