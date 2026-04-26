@@ -778,7 +778,15 @@ Training with TRL's SFTTrainer using our QLoRA config. The model learns to:
 
     cells.append(code("""from trl import SFTConfig, SFTTrainer
 
-sft_config = SFTConfig(
+# Compute warmup_steps from ratio (warmup_ratio deprecated in TRL v5.2+)
+total_steps = len(train_dataset) * NUM_EPOCHS // (PER_DEVICE_BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS)
+warmup_steps = int(total_steps * WARMUP_RATIO)
+
+# Build SFTConfig kwargs — handle version differences in TRL
+import inspect
+sft_config_params = inspect.signature(SFTConfig.__init__).parameters
+
+sft_kwargs = dict(
     output_dir=ADAPTER_DIR,
     num_train_epochs=NUM_EPOCHS,
     per_device_train_batch_size=PER_DEVICE_BATCH_SIZE,
@@ -786,7 +794,7 @@ sft_config = SFTConfig(
     gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
     learning_rate=LEARNING_RATE,
     lr_scheduler_type=LR_SCHEDULER,
-    warmup_ratio=WARMUP_RATIO,
+    warmup_steps=warmup_steps,
     weight_decay=WEIGHT_DECAY,
     bf16=BF16,
     logging_steps=10,
@@ -804,14 +812,26 @@ sft_config = SFTConfig(
     dataset_kwargs={"skip_prepare_dataset": True},
 )
 
-trainer = SFTTrainer(
+# max_seq_length location varies by TRL version
+if "max_seq_length" in sft_config_params:
+    sft_kwargs["max_seq_length"] = MAX_SEQ_LENGTH
+
+sft_config = SFTConfig(**sft_kwargs)
+
+# SFTTrainer — pass max_seq_length here if SFTConfig didn't accept it
+trainer_kwargs = dict(
     model=model,
     args=sft_config,
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
     processing_class=tokenizer,
-    max_seq_length=MAX_SEQ_LENGTH,
 )
+
+trainer_params = inspect.signature(SFTTrainer.__init__).parameters
+if "max_seq_length" in trainer_params and "max_seq_length" not in sft_kwargs:
+    trainer_kwargs["max_seq_length"] = MAX_SEQ_LENGTH
+
+trainer = SFTTrainer(**trainer_kwargs)
 
 print(f"Training config:")
 print(f"  Epochs: {NUM_EPOCHS}")
