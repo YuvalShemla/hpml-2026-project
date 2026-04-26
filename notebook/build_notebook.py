@@ -60,7 +60,7 @@ This notebook runs the full experiment pipeline on **1x H100 (80 GB)**:
 
     cells.append(code("""%%capture
 !pip install -q torch torchvision torchaudio
-!pip install -q git+https://github.com/huggingface/transformers.git peft>=0.13.0 trl>=0.12.0
+!pip install -q transformers>=5.5.0 peft>=0.13.0 trl>=0.12.0
 !pip install -q bitsandbytes>=0.44.0 accelerate>=1.0.0
 !pip install -q datasets evaluate rouge-score
 !pip install -q pandas matplotlib seaborn tqdm
