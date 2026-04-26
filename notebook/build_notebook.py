@@ -58,14 +58,17 @@ This notebook runs the full experiment pipeline on **1x H100 (80 GB)**:
     # ══════════════════════════════════════════════════════════════════════
     cells.append(md("""## 0. Setup & Installation"""))
 
-    cells.append(code("""%%capture
-!pip install -q torch torchvision torchaudio
-!pip install -q transformers>=5.5.0 peft>=0.13.0 trl>=0.12.0
-!pip install -q bitsandbytes>=0.44.0 accelerate>=1.0.0
+    cells.append(code("""!pip install -U transformers>=5.5.0 peft>=0.13.0 trl>=0.12.0
+!pip install -U bitsandbytes>=0.44.0 accelerate>=1.0.0
 !pip install -q datasets evaluate rouge-score
 !pip install -q pandas matplotlib seaborn tqdm
 !pip install -q sentencepiece protobuf
-print("All packages installed.")"""))
+
+import transformers
+print(f"transformers version: {transformers.__version__}")
+assert "gemma4" in transformers.models.auto.configuration_auto.CONFIG_MAPPING_NAMES or hasattr(transformers, 'Gemma4Config'), \\
+    f"transformers {transformers.__version__} does not support Gemma 4. Need >=5.5.0. Try: Runtime > Restart runtime"
+print("All packages installed. Gemma 4 support confirmed.")"""))
 
     cells.append(code("""import os
 import json
