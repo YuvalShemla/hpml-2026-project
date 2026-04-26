@@ -809,7 +809,7 @@ sft_kwargs = dict(
     seed=SEED,
     gradient_checkpointing=True,
     gradient_checkpointing_kwargs={"use_reentrant": False},
-    dataset_kwargs={"skip_prepare_dataset": True},
+    remove_unused_columns=False,
 )
 
 # max_seq_length location varies by TRL version
