@@ -110,13 +110,11 @@ if torch.cuda.is_available():
 All hyperparameters in one place. Change the model ID here to experiment with different models."""))
 
     cells.append(code("""# ── Model ─────────────────────────────────────────────────────────────
-MODEL_ID = "google/gemma-3-4b-it"   # 4.5B params, proven QLoRA support
-# MODEL_ID = "google/gemma-4-E4B-it"  # 4.5B params (2.3B effective), newest arch — use LOAD_IN_8BIT=True
-# MODEL_ID = "google/gemma-3-12b-it"  # 12B dense, still fits on H100
-# MODEL_ID = "google/gemma-3-1b-it"   # 1B, fastest for debugging
+MODEL_ID = "google/gemma-4-E4B-it"  # 4.5B params (2.3B effective), newest Gemma arch
+# MODEL_ID = "google/gemma-3-4b-it"  # 4.5B params, fallback if Gemma 4 has issues
 
-# Quantization: 4-bit for Gemma 3, 8-bit for Gemma 4 (4-bit has a known bnb bug for Gemma 4)
-LOAD_IN_8BIT = False  # Set True for Gemma 4 models
+# 8-bit quantization for Gemma 4 (4-bit has a known bnb bug with Gemma 4)
+LOAD_IN_8BIT = True
 
 # HuggingFace token (required for Gemma gated models)
 # Get yours at https://huggingface.co/settings/tokens
@@ -138,7 +136,7 @@ REPO_DIR = "/content/hpml-2026-project"
 LORA_R = 32
 LORA_ALPHA = 64
 LORA_DROPOUT = 0.05
-LORA_TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+LORA_TARGET_MODULES = "all-linear"  # PEFT auto-detects all linear layers; works across Gemma 3/4
 
 # ── Training ──────────────────────────────────────────────────────────
 MAX_SEQ_LENGTH = 2048
@@ -722,21 +720,22 @@ lora_config = LoraConfig(
 model = get_peft_model(model, lora_config)
 
 # ── Gemma 3 fix: inject token_type_ids during training ────────────
-# Gemma 3 multimodal arch requires token_type_ids in forward().
-# For text-only training, these should be all zeros.
+# Gemma 3 requires token_type_ids in forward(). Gemma 4 does not.
 # See: https://github.com/huggingface/trl/issues/5032
-_original_forward = model.forward.__wrapped__ if hasattr(model.forward, '__wrapped__') else model.forward
+if "gemma-3" in MODEL_ID:
+    _original_forward = model.forward.__wrapped__ if hasattr(model.forward, '__wrapped__') else model.forward
 
-def _patched_forward(*args, **kwargs):
-    if "input_ids" in kwargs and "token_type_ids" not in kwargs:
-        kwargs["token_type_ids"] = torch.zeros_like(kwargs["input_ids"])
-    elif len(args) > 0 and "token_type_ids" not in kwargs:
-        # input_ids is the first positional arg
-        kwargs["token_type_ids"] = torch.zeros_like(args[0])
-    return _original_forward(*args, **kwargs)
+    def _patched_forward(*args, **kwargs):
+        if "input_ids" in kwargs and "token_type_ids" not in kwargs:
+            kwargs["token_type_ids"] = torch.zeros_like(kwargs["input_ids"])
+        elif len(args) > 0 and "token_type_ids" not in kwargs:
+            kwargs["token_type_ids"] = torch.zeros_like(args[0])
+        return _original_forward(*args, **kwargs)
 
-model.forward = _patched_forward
-print("Applied Gemma 3 token_type_ids patch for text-only training")
+    model.forward = _patched_forward
+    print("Applied Gemma 3 token_type_ids patch")
+else:
+    print(f"No token_type_ids patch needed for {MODEL_ID}")
 
 trainable, total = model.get_nb_trainable_parameters()
 print(f"Trainable parameters: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
