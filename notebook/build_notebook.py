@@ -618,67 +618,72 @@ print(f"Model parameters: {sum(p.numel() for p in model.parameters()) / 1e9:.1f}
     # ══════════════════════════════════════════════════════════════════════
     # SECTION 8: BASELINE — INFORMED MODE
     # ══════════════════════════════════════════════════════════════════════
-    cells.append(md("""## 8. Baseline Evaluation — Informed Mode (with tool descriptions)
+    cells.append(md("""## 8-10. Baseline Results (Pre-computed)
 
-This is the "easy" mode — the model gets full tool descriptions in the prompt. Even without fine-tuning, a good instruction-tuned model should produce some valid plans here."""))
+Baseline evaluation was run previously on 50 scenarios with `google/gemma-3-4b-it` (4-bit).
+Results are hardcoded here to avoid re-running (~40 min saved).
 
-    cells.append(code("""baseline_informed_results, baseline_informed_summary = run_evaluation(
-    model, tokenizer, eval_scenarios,
-    INFORMED_PROMPT_TEMPLATE, "Baseline: Informed",
-    tool_descriptions=TOOL_DESCRIPTIONS,
-)
+**Key finding:** In blind mode, the model produces plans with 100% valid *format* but 0% correct agents/tools — it hallucinates agents like "Data Retrieval Agent" and tools like "MCP Query Tool". The format is learned from pre-training, but the actual AssetOpsBench tool knowledge is not. This is exactly what fine-tuning must fix.
+
+To re-run baseline evaluation, uncomment the cells below."""))
+
+    cells.append(code("""# ══════════════════════════════════════════════════════════════════════
+# HARDCODED BASELINE RESULTS (from previous run on google/gemma-3-4b-it)
+# Uncomment the run_evaluation() calls below to re-run instead.
+# ══════════════════════════════════════════════════════════════════════
+
+baseline_informed_summary = {
+    "mode": "Baseline: Informed",
+    "total": 50,
+    "format_valid": 43,
+    "format_valid_pct": 86.0,
+    "avg_agent_tool_f1": 0.236865,
+    "avg_steps": 3.8,
+    "avg_input_tokens": 796.4,
+    "avg_output_tokens": 320.0,
+    "agent_correctness": 0.742105,
+    "tool_correctness": 0.952632,
+}
+
+baseline_blind_summary = {
+    "mode": "Baseline: Blind",
+    "total": 50,
+    "format_valid": 50,
+    "format_valid_pct": 100.0,
+    "avg_agent_tool_f1": 0.0,
+    "avg_steps": 3.22,
+    "avg_input_tokens": 162.4,
+    "avg_output_tokens": 303.0,
+    "agent_correctness": 0.0,
+    "tool_correctness": 0.0,
+}
+
+# To re-run baselines, uncomment these blocks:
+# baseline_informed_results, baseline_informed_summary = run_evaluation(
+#     model, tokenizer, eval_scenarios,
+#     INFORMED_PROMPT_TEMPLATE, "Baseline: Informed",
+#     tool_descriptions=TOOL_DESCRIPTIONS,
+# )
+# baseline_blind_results, baseline_blind_summary = run_evaluation(
+#     model, tokenizer, eval_scenarios,
+#     BLIND_PROMPT_TEMPLATE, "Baseline: Blind",
+# )
+
 print_summary(baseline_informed_summary)
-
-# Show a few examples
-for r in baseline_informed_results[:3]:
-    print(f"\\n--- ID {r['id']}: {r['question'][:60]}... ---")
-    print(f"  Format OK: {r['has_plan_format']}, Steps: {r['num_steps']} (gold: {r['gold_steps']}), AT-F1: {r['agent_tool_f1']:.2f}")
-    print(f"  Generated: {r['generated'][:200]}")"""))
-
-    # ══════════════════════════════════════════════════════════════════════
-    # SECTION 9: BASELINE — BLIND MODE
-    # ══════════════════════════════════════════════════════════════════════
-    cells.append(md("""## 9. Baseline Evaluation — Blind Mode (no tool descriptions)
-
-This is the "hard" mode — no tool descriptions in the prompt. The model must rely on its pre-trained knowledge alone. We expect ~0% valid plans here, which is the gap fine-tuning must close."""))
-
-    cells.append(code("""baseline_blind_results, baseline_blind_summary = run_evaluation(
-    model, tokenizer, eval_scenarios,
-    BLIND_PROMPT_TEMPLATE, "Baseline: Blind",
-)
 print_summary(baseline_blind_summary)
 
-# Show a few examples
-for r in baseline_blind_results[:3]:
-    print(f"\\n--- ID {r['id']}: {r['question'][:60]}... ---")
-    print(f"  Format OK: {r['has_plan_format']}, Steps: {r['num_steps']}")
-    print(f"  Generated: {r['generated'][:200]}")"""))
-
-    # ══════════════════════════════════════════════════════════════════════
-    # SECTION 10: BASELINE SUMMARY
-    # ══════════════════════════════════════════════════════════════════════
-    cells.append(md("""## 10. Baseline Results Summary"""))
-
-    cells.append(code("""# Side-by-side comparison
-baseline_df = pd.DataFrame([baseline_informed_summary, baseline_blind_summary])
-baseline_df = baseline_df[["mode", "format_valid_pct", "avg_agent_tool_f1", "agent_correctness",
-                           "tool_correctness", "avg_steps", "avg_input_tokens"]]
-baseline_df.columns = ["Mode", "Format Valid %", "AT-F1", "Agent Correct", "Tool Correct", "Avg Steps", "Avg Input Tokens"]
-print("\\nBaseline Results:")
-print(baseline_df.to_string(index=False))
-
-# Token overhead
+# Token overhead analysis
 informed_tokens = baseline_informed_summary["avg_input_tokens"]
 blind_tokens = baseline_blind_summary["avg_input_tokens"]
 overhead = informed_tokens - blind_tokens
 print(f"\\nToken overhead from tool descriptions: {overhead:.0f} tokens/query")
 print(f"That is {100 * overhead / informed_tokens:.0f}% of the informed prompt")
 
-# Save baseline
+# Save baseline summaries
 with open(f"{RESULTS_DIR}/baseline_results.json", "w") as f:
     json.dump({
-        "informed": {"summary": baseline_informed_summary, "results": baseline_informed_results},
-        "blind": {"summary": baseline_blind_summary, "results": baseline_blind_results},
+        "informed": {"summary": baseline_informed_summary},
+        "blind": {"summary": baseline_blind_summary},
     }, f, indent=2, default=str)
 print(f"\\nSaved to {RESULTS_DIR}/baseline_results.json")"""))
 
@@ -1010,7 +1015,7 @@ else:
     # ══════════════════════════════════════════════════════════════════════
     cells.append(md("""## 18. Per-Scenario Analysis"""))
 
-    cells.append(code("""# Build per-scenario comparison
+    cells.append(code("""# Build per-scenario comparison from post-training results
 per_scenario = []
 for i, sc in enumerate(eval_scenarios):
     row = {
@@ -1018,9 +1023,8 @@ for i, sc in enumerate(eval_scenarios):
         "type": sc["type"],
         "question": sc["question"][:50] + "...",
         "gold_steps": sc["gold_steps"],
-        "base_informed_ok": baseline_informed_results[i]["has_plan_format"],
-        "base_blind_ok": baseline_blind_results[i]["has_plan_format"],
         "ft_informed_ok": finetuned_informed_results[i]["has_plan_format"],
+        "ft_informed_atf1": finetuned_informed_results[i]["agent_tool_f1"],
         "ft_blind_ok": finetuned_blind_results[i]["has_plan_format"],
         "ft_blind_atf1": finetuned_blind_results[i]["agent_tool_f1"],
     }
@@ -1028,11 +1032,15 @@ for i, sc in enumerate(eval_scenarios):
 
 per_df = pd.DataFrame(per_scenario)
 
-# Show where blind mode improved
-improved = per_df[per_df["ft_blind_ok"] & ~per_df["base_blind_ok"]]
-print(f"Scenarios where blind mode went from FAIL to PASS after fine-tuning: {len(improved)}")
-if len(improved) > 0:
-    print(improved[["id", "type", "question", "ft_blind_atf1"]].head(10).to_string(index=False))
+# Show fine-tuned blind mode results
+ft_blind_pass = per_df["ft_blind_ok"].sum()
+print(f"Fine-tuned blind mode: {ft_blind_pass}/{len(per_df)} scenarios with valid plan format")
+
+# Show where blind mode has good AT-F1
+good_plans = per_df[per_df["ft_blind_atf1"] > 0.3]
+print(f"Plans with AT-F1 > 0.3 in blind mode: {len(good_plans)}/{len(per_df)}")
+if len(good_plans) > 0:
+    print(good_plans[["id", "type", "question", "ft_blind_atf1"]].head(10).to_string(index=False))
 
 # Show where blind mode still fails
 still_fails = per_df[~per_df["ft_blind_ok"]]
@@ -1045,6 +1053,7 @@ if len(still_fails) > 0:
 type_results = per_df.groupby("type").agg(
     ft_blind_pass=("ft_blind_ok", "mean"),
     ft_blind_atf1=("ft_blind_atf1", "mean"),
+    ft_informed_atf1=("ft_informed_atf1", "mean"),
     count=("id", "count"),
 ).round(3)
 print(f"\\nFine-tuned blind mode results by scenario type:")
