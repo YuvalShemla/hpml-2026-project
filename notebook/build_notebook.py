@@ -101,7 +101,13 @@ if torch.cuda.is_available():
     # ══════════════════════════════════════════════════════════════════
     cells.append(md("## 1. Configuration"))
 
-    cells.append(code("""# ── Model ─────────────────────────────────────────────────────
+    cells.append(code("""# ══════════════════════════════════════════════════════════════
+# LIGHT MODE: set True for a quick test run (~30-60 min total)
+# Set False for the full experiment (~4-5 hours)
+# ══════════════════════════════════════════════════════════════
+LIGHT_MODE = True
+
+# ── Model ─────────────────────────────────────────────────────
 MODEL_ID = "google/gemma-4-E4B-it"  # 4.5B params (2.3B effective)
 # MODEL_ID = "google/gemma-3-4b-it"  # fallback if Gemma 4 has issues
 LOAD_IN_8BIT = True  # 8-bit for Gemma 4 (4-bit has known bnb bug)
@@ -120,8 +126,8 @@ REPO_URL = "https://github.com/YuvalShemla/hpml-2026-project.git"
 REPO_DIR = "/content/hpml-2026-project"
 
 # ── QLoRA ─────────────────────────────────────────────────────
-LORA_R = 32
-LORA_ALPHA = 64
+LORA_R = 32 if not LIGHT_MODE else 16
+LORA_ALPHA = 64 if not LIGHT_MODE else 32
 LORA_DROPOUT = 0.05
 LORA_TARGET_MODULES = "all-linear"
 
@@ -129,34 +135,42 @@ LORA_TARGET_MODULES = "all-linear"
 # Auto-adjust for GPU memory (A100 40GB vs 80GB)
 _gpu_mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9 if torch.cuda.is_available() else 40
 if _gpu_mem_gb > 60:  # 80GB GPU
-    MAX_SEQ_LENGTH = 2048
-    PER_DEVICE_BATCH_SIZE = 4
-    GRADIENT_ACCUMULATION_STEPS = 4
+    MAX_SEQ_LENGTH = 2048 if not LIGHT_MODE else 1024
+    PER_DEVICE_BATCH_SIZE = 4 if not LIGHT_MODE else 2
+    GRADIENT_ACCUMULATION_STEPS = 4 if not LIGHT_MODE else 4
 else:  # 40GB GPU
-    MAX_SEQ_LENGTH = 1024
-    PER_DEVICE_BATCH_SIZE = 2
-    GRADIENT_ACCUMULATION_STEPS = 8
+    MAX_SEQ_LENGTH = 1024 if not LIGHT_MODE else 512
+    PER_DEVICE_BATCH_SIZE = 2 if not LIGHT_MODE else 1
+    GRADIENT_ACCUMULATION_STEPS = 8 if not LIGHT_MODE else 8
 LEARNING_RATE = 2e-4
-NUM_EPOCHS = 3
+NUM_EPOCHS = 3 if not LIGHT_MODE else 1
 WARMUP_RATIO = 0.05
 WEIGHT_DECAY = 0.01
 LR_SCHEDULER = "cosine"
 BF16 = True
 
 # ── Evaluation ────────────────────────────────────────────────
-NUM_HELD_OUT = 50  # scenarios held out for eval (stratified by type)
-MAX_NEW_TOKENS = 1024
+NUM_HELD_OUT = 50 if not LIGHT_MODE else 15
+MAX_NEW_TOKENS = 1024 if not LIGHT_MODE else 512
 TEMPERATURE = 0.1
 TOP_P = 0.9
+
+# ── Light mode: cap training data ────────────────────────────
+MAX_TRAIN_EXAMPLES = None if not LIGHT_MODE else 300  # None = use all
 
 # ── Output ────────────────────────────────────────────────────
 OUTPUT_DIR = "/content/output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+mode_str = "LIGHT (quick test)" if LIGHT_MODE else "FULL (production)"
+print(f"Mode: {mode_str}")
 print(f"Model: {MODEL_ID}")
 print(f"QLoRA: r={LORA_R}, alpha={LORA_ALPHA}")
 print(f"Training: lr={LEARNING_RATE}, epochs={NUM_EPOCHS}, eff_batch={PER_DEVICE_BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS}")
-print(f"Held-out eval scenarios: {NUM_HELD_OUT}")"""))
+print(f"Eval: {NUM_HELD_OUT} held-out scenarios, max_tokens={MAX_NEW_TOKENS}")
+if LIGHT_MODE:
+    print(f"Training cap: {MAX_TRAIN_EXAMPLES} examples per model")
+    print(f"Estimated runtime: ~30-60 min")"""))
 
     # ══════════════════════════════════════════════════════════════════
     # 2. CLONE & LOAD
@@ -761,6 +775,8 @@ def extract_specialist_steps(plan_text):
 # ── 1. Generalist data (everything) ──────────────────────────────
 all_train = [{"messages": d["messages"]} for d in clean_tool + clean_plan + clean_exec]
 random.shuffle(all_train)
+if MAX_TRAIN_EXAMPLES:
+    all_train = all_train[:MAX_TRAIN_EXAMPLES]
 sp = int(len(all_train) * 0.95)
 generalist_train, generalist_eval = all_train[:sp], all_train[sp:]
 
@@ -779,6 +795,8 @@ for d in clean_tool:
     planner_data.append({"messages": d["messages"]})
 
 random.shuffle(planner_data)
+if MAX_TRAIN_EXAMPLES:
+    planner_data = planner_data[:MAX_TRAIN_EXAMPLES]
 sp = int(len(planner_data) * 0.95)
 planner_train, planner_eval = planner_data[:sp], planner_data[sp:]
 
@@ -898,6 +916,8 @@ for agent_name, data in sorted(specialist_data.items()):
     print(f"{'='*50}")
     spec_model = setup_lora(model)
     random.shuffle(data)
+    if MAX_TRAIN_EXAMPLES:
+        data = data[:min(len(data), MAX_TRAIN_EXAMPLES)]
     sp = int(len(data) * 0.9)
     spec_dir = f"{OUTPUT_DIR}/specialist_{agent_name}"
     train_model(spec_model, data[:sp], data[sp:] if sp < len(data) else None, spec_dir)
