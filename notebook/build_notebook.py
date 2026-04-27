@@ -586,9 +586,34 @@ def print_summary(s):
     print(f"  Args:   {ac} correct, {am} missing, {ae} extra (hallucinated)")"""))
 
     # ══════════════════════════════════════════════════════════════════
-    # 5. BASELINE (HARDCODED)
+    # 5. LOAD MODEL
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("""## 5. Baseline Evaluation (No Fine-Tuning)
+    cells.append(md("## 5. Load Base Model"))
+
+    cells.append(code("""from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+
+if LOAD_IN_8BIT:
+    bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+    quant_label = "8-bit"
+else:
+    bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                                     bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True)
+    quant_label = "4-bit NF4"
+
+print(f"Loading {MODEL_ID} in {quant_label}...")
+t0 = time.time()
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=HF_TOKEN)
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID, quantization_config=bnb_config,
+    device_map="auto", torch_dtype=torch.bfloat16, token=HF_TOKEN, attn_implementation="eager")
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+    model.config.pad_token_id = tokenizer.eos_token_id
+print(f"Loaded in {time.time()-t0:.1f}s, {torch.cuda.max_memory_allocated()/1e9:.1f} GB, {sum(p.numel() for p in model.parameters())/1e9:.1f}B params")"""))
+
+    # ══════════════════════════════════════════════════════════════════
+    # 6. BASELINE EVAL
+    # ══════════════════════════════════════════════════════════════════
+    cells.append(md("""## 6. Baseline Evaluation (No Fine-Tuning)
 
 Test the base model on held-out scenarios in two modes:
 - **Informed** — full tool descriptions in the prompt (the "easy" mode)
@@ -612,31 +637,6 @@ print(f"\\nToken overhead from tool descriptions: {token_overhead:.0f} tokens ({
 print("\\nBlind mode examples (expect hallucinated agents):")
 for r in baseline_blind_results[:3]:
     print(f"  ID {r['id']}: AT-F1={r['agent_tool_f1']:.2f}, {r['generated'][:150]}")"""))
-
-    # ══════════════════════════════════════════════════════════════════
-    # 6. LOAD MODEL
-    # ══════════════════════════════════════════════════════════════════
-    cells.append(md("## 6. Load Base Model"))
-
-    cells.append(code("""from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-
-if LOAD_IN_8BIT:
-    bnb_config = BitsAndBytesConfig(load_in_8bit=True)
-    quant_label = "8-bit"
-else:
-    bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
-                                     bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True)
-    quant_label = "4-bit NF4"
-
-print(f"Loading {MODEL_ID} in {quant_label}...")
-t0 = time.time()
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=HF_TOKEN)
-model = AutoModelForCausalLM.from_pretrained(MODEL_ID, quantization_config=bnb_config,
-    device_map="auto", torch_dtype=torch.bfloat16, token=HF_TOKEN, attn_implementation="eager")
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-    model.config.pad_token_id = tokenizer.eos_token_id
-print(f"Loaded in {time.time()-t0:.1f}s, {torch.cuda.max_memory_allocated()/1e9:.1f} GB, {sum(p.numel() for p in model.parameters())/1e9:.1f}B params")"""))
 
     # ══════════════════════════════════════════════════════════════════
     # 7. QLORA SETUP + TRAIN HELPER
