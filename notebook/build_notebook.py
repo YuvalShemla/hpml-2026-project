@@ -597,302 +597,385 @@ def train_model(peft_model, train_data, eval_data, output_dir, epochs=NUM_EPOCHS
 print("Training helper ready.")"""))
 
     # ══════════════════════════════════════════════════════════════════
-    # 8. PREPARE TRAINING DATA
+    # 8. PREPARE TRAINING DATA (3-TIER: GENERALIST / PLANNER / SPECIALISTS)
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("## 8. Prepare Training Data"))
+    cells.append(md("""## 8. Prepare Training Data — 3-Tier Architecture
 
-    cells.append(code("""# Combine clean data for generalist model
+We train three types of models:
+
+1. **Generalist** — one model trained on everything (baseline for comparison)
+2. **Planner** — specialized in routing: given a question, output which agents/tools/dependencies to use (no args)
+3. **Specialists** (per agent) — given a step's task + agent + tool, output the correct arguments
+
+```
+Question → [Planner] → routing plan → [Specialist per step] → full plan with args
+```
+
+This way, the planner focuses on *what to do* and specialists focus on *how to do it*."""))
+
+    cells.append(code("""def get_agents_in_plan(plan_text):
+    return [a for a in re.findall(r'#Agent\\d+:\\s*(\\S+)', plan_text) if a not in ('none', '')]
+
+def strip_plan_to_routing(plan_text):
+    \"\"\"Strip a plan to routing-only (Task/Agent/Tool/Dependency). Remove Args/ExpectedOutput.\"\"\"
+    lines = []
+    for line in plan_text.split("\\n"):
+        stripped = line.strip()
+        if any(stripped.startswith(f"#{tag}") for tag in ["Task", "Agent", "Tool", "Dependency"]):
+            if not stripped.startswith("#Args") and not stripped.startswith("#ExpectedOutput"):
+                lines.append(line)
+        elif stripped == "":
+            lines.append("")
+    return "\\n".join(lines).strip()
+
+def extract_specialist_steps(plan_text):
+    \"\"\"Extract per-step specialist examples: input=(task, agent, tool) -> output=(args, expected).\"\"\"
+    steps = []
+    for block in re.split(r'(?=#Task\\d+:)', plan_text):
+        block = block.strip()
+        if not block: continue
+        task_m = re.search(r'#Task\\d+:\\s*(.*)', block)
+        agent_m = re.search(r'#Agent\\d+:\\s*(\\S+)', block)
+        tool_m = re.search(r'#Tool\\d+:\\s*(\\S+)', block)
+        args_m = re.search(r'#Args\\d+:\\s*(.*)', block)
+        exp_m = re.search(r'#ExpectedOutput\\d+:\\s*(.*)', block)
+        dep_m = re.search(r'#Dependency\\d+:\\s*(.*)', block)
+        if task_m and agent_m and tool_m:
+            agent = agent_m.group(1).strip()
+            if agent in ('none', ''): continue
+            instruction = f"Generate the arguments for this tool call:\\nTask: {task_m.group(1).strip()}\\nAgent: {agent}\\nTool: {tool_m.group(1).strip()}\\nDependency: {dep_m.group(1).strip() if dep_m else 'None'}"
+            response = f"#Args: {args_m.group(1).strip() if args_m else '{}'}\\n#ExpectedOutput: {exp_m.group(1).strip() if exp_m else 'Result'}"
+            steps.append({"agent": agent, "instruction": instruction, "response": response})
+    return steps
+
+# ── 1. Generalist data (everything) ──────────────────────────────
 all_train = [{"messages": d["messages"]} for d in clean_tool + clean_plan + clean_exec]
 random.shuffle(all_train)
-split_idx = int(len(all_train) * 0.95)
-generalist_train = all_train[:split_idx]
-generalist_eval = all_train[split_idx:]
+sp = int(len(all_train) * 0.95)
+generalist_train, generalist_eval = all_train[:sp], all_train[sp:]
 
-print(f"Generalist training: {len(generalist_train)}, eval: {len(generalist_eval)}")
-
-# Split planning data by primary agent for specialist models
-def get_primary_agent(plan_text):
-    agents = [a for a in re.findall(r'#Agent\\d+:\\s*(\\S+)', plan_text) if a not in ('none', '')]
-    return agents[0] if agents else None
-
-specialist_data = {"IoTAgent": [], "FMSRAgent": [], "TSFMAgent": [], "WorkOrderAgent": []}
+# ── 2. Planner data (routing-only plans) ─────────────────────────
+planner_data = []
 for d in clean_plan:
-    if d.get("metadata", {}).get("category") != "planning":
-        continue
-    agent = get_primary_agent(d["messages"][1]["content"])
-    if agent in specialist_data:
-        specialist_data[agent].append({"messages": d["messages"]})
+    if d.get("metadata", {}).get("category") != "planning": continue
+    routing = strip_plan_to_routing(d["messages"][1]["content"])
+    if "#Task" in routing and "#Agent" in routing:
+        planner_data.append({"messages": [
+            {"role": "user", "content": d["messages"][0]["content"]},
+            {"role": "assistant", "content": routing},
+        ]})
+# Also add tool knowledge (helps planner learn agent/tool associations)
+for d in clean_tool:
+    planner_data.append({"messages": d["messages"]})
 
-# Add tool knowledge to each specialist (filtered to their tools)
-agent_tool_keywords = {
-    "IoTAgent": ["sites", "assets", "sensors", "history", "IoTAgent", "IoT", "telemetry"],
-    "FMSRAgent": ["failure_mode", "sensor_mapping", "FMSRAgent", "FMSR", "failure"],
-    "TSFMAgent": ["tsfm", "forecast", "anomaly", "TSFMAgent", "time-series", "TTM"],
-    "WorkOrderAgent": ["work_order", "maintenance", "WorkOrderAgent", "corrective", "preventive"],
-}
-for agent, keywords in agent_tool_keywords.items():
-    for d in clean_tool:
-        text = d["messages"][0]["content"] + " " + d["messages"][1]["content"]
-        if any(kw.lower() in text.lower() for kw in keywords):
-            specialist_data[agent].append({"messages": d["messages"]})
+random.shuffle(planner_data)
+sp = int(len(planner_data) * 0.95)
+planner_train, planner_eval = planner_data[:sp], planner_data[sp:]
 
-print(f"\\nSpecialist training data:")
-for agent, data in specialist_data.items():
-    print(f"  {agent}: {len(data)} examples")"""))
+# ── 3. Specialist data (per-agent step-level arg generation) ─────
+specialist_data = defaultdict(list)
+for d in clean_plan:
+    if d.get("metadata", {}).get("category") != "planning": continue
+    for step in extract_specialist_steps(d["messages"][1]["content"]):
+        specialist_data[step["agent"]].append({"messages": [
+            {"role": "user", "content": step["instruction"]},
+            {"role": "assistant", "content": step["response"]},
+        ]})
+
+print(f"Training data prepared:")
+print(f"  Generalist:  {len(generalist_train)} train, {len(generalist_eval)} eval")
+print(f"  Planner:     {len(planner_train)} train, {len(planner_eval)} eval")
+print(f"  Specialists:")
+for agent, data in sorted(specialist_data.items()):
+    print(f"    {agent}: {len(data)} step-level examples")"""))
 
     # ══════════════════════════════════════════════════════════════════
     # 9. TRAIN GENERALIST
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("""## 9. Train Generalist Model
-
-One model trained on ALL tool knowledge + planning + execution data."""))
+    cells.append(md("## 9. Train Generalist Model\n\nOne model trained on ALL data — the baseline for comparison."))
 
     cells.append(code("""generalist_dir = f"{OUTPUT_DIR}/generalist"
-peft_model = setup_lora(model)
-generalist_trainer = train_model(peft_model, generalist_train, generalist_eval, generalist_dir)"""))
+peft_generalist = setup_lora(model)
+gen_trainer = train_model(peft_generalist, generalist_train, generalist_eval, generalist_dir)
 
-    cells.append(code("""# Plot generalist training loss
-log_h = generalist_trainer.state.log_history
-train_losses = [(h["step"], h["loss"]) for h in log_h if "loss" in h]
-eval_losses = [(h["step"], h["eval_loss"]) for h in log_h if "eval_loss" in h]
+# Plot loss
+log_h = gen_trainer.state.log_history
 fig, ax = plt.subplots(figsize=(10, 4))
-if train_losses:
-    ax.plot(*zip(*train_losses), label="Train", alpha=0.7)
-if eval_losses:
-    ax.plot(*zip(*eval_losses), label="Eval", lw=2)
-ax.set(xlabel="Step", ylabel="Loss", title="Generalist Training Loss")
-ax.legend(); ax.grid(True, alpha=0.3)
+tl = [(h["step"], h["loss"]) for h in log_h if "loss" in h]
+el = [(h["step"], h["eval_loss"]) for h in log_h if "eval_loss" in h]
+if tl: ax.plot(*zip(*tl), label="Train", alpha=0.7)
+if el: ax.plot(*zip(*el), label="Eval", lw=2)
+ax.set(xlabel="Step", ylabel="Loss", title="Generalist Training"); ax.legend(); ax.grid(alpha=0.3)
 plt.tight_layout(); plt.show()"""))
 
     # ══════════════════════════════════════════════════════════════════
     # 10. EVALUATE GENERALIST
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("## 10. Evaluate Generalist (Blind Mode — No Tool Descriptions)"))
+    cells.append(md("## 10. Evaluate Generalist"))
 
     cells.append(code("""gen_blind_results, gen_blind_summary = run_evaluation(
-    peft_model, tokenizer, eval_scenarios, BLIND_PROMPT, "Generalist: Blind")
+    peft_generalist, tokenizer, eval_scenarios, BLIND_PROMPT, "Generalist: Blind")
 print_summary(gen_blind_summary)
 
-# Show examples
+gen_informed_results, gen_informed_summary = run_evaluation(
+    peft_generalist, tokenizer, eval_scenarios, INFORMED_PROMPT, "Generalist: Informed",
+    tool_descriptions=TOOL_DESCRIPTIONS)
+print_summary(gen_informed_summary)
+
 for r in gen_blind_results[:3]:
     print(f"\\n--- ID {r['id']} ({r['type']}): {r['question'][:55]}... ---")
-    print(f"  AT-F1: {r['agent_tool_f1']:.2f}, ROUGE-L: {r['rouge_l']:.2f}, Steps: {r['num_steps']} (gold: {r['gold_steps']})")
-    print(f"  Output: {r['generated'][:200]}")"""))
-
-    cells.append(code("""# Also test generalist in informed mode (should be at least as good)
-gen_informed_results, gen_informed_summary = run_evaluation(
-    peft_model, tokenizer, eval_scenarios, INFORMED_PROMPT, "Generalist: Informed",
-    tool_descriptions=TOOL_DESCRIPTIONS)
-print_summary(gen_informed_summary)"""))
+    print(f"  AT-F1={r['agent_tool_f1']:.2f} ROUGE={r['rouge_l']:.2f} Steps={r['num_steps']}(gold:{r['gold_steps']})")
+    print(f"  {r['generated'][:200]}")"""))
 
     # ══════════════════════════════════════════════════════════════════
-    # 11. TRAIN SPECIALISTS
+    # 11. TRAIN PLANNER
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("""## 11. Train Specialist Models
+    cells.append(md("""## 11. Train Planner Model
 
-Four domain-specific models, each trained only on its agent's data.
-The hypothesis: specialists outperform the generalist on their domain because they don't need to handle the full tool catalog.
+The planner is specialized in **routing**: given a question, it outputs which agents, tools, and dependencies to use — but NOT the arguments. This is a simpler task than full plan generation.
 
-In production, a lightweight router (or the generalist) picks the agent, then the specialist generates the detailed plan."""))
+The planner's output looks like:
+```
+#Task1: Retrieve assets for MAIN site
+#Agent1: IoTAgent
+#Tool1: assets
+#Dependency1: None
+```
+No `#Args` or `#ExpectedOutput` — those come from the specialist."""))
 
-    cells.append(code("""# We need to reload base model for each specialist (LoRA adapters are different)
-# First, unload the generalist adapter
-del peft_model
-torch.cuda.empty_cache()
+    cells.append(code("""# Free generalist from GPU
+del peft_generalist; torch.cuda.empty_cache()
 
-specialist_trainers = {}
+planner_dir = f"{OUTPUT_DIR}/planner"
+peft_planner = setup_lora(model)
+planner_trainer = train_model(peft_planner, planner_train, planner_eval, planner_dir)"""))
+
+    # ══════════════════════════════════════════════════════════════════
+    # 12. EVALUATE PLANNER
+    # ══════════════════════════════════════════════════════════════════
+    cells.append(md("## 12. Evaluate Planner (Routing Accuracy)"))
+
+    cells.append(code("""# Evaluate planner on routing quality (AT-F1, agent/tool correctness)
+# The planner generates routing-only plans, so we compare agent-tool pairs
+planner_blind_results, planner_blind_summary = run_evaluation(
+    peft_planner, tokenizer, eval_scenarios, BLIND_PROMPT, "Planner: Blind")
+print_summary(planner_blind_summary)
+
+# Show planner outputs (should be shorter, no args)
+for r in planner_blind_results[:3]:
+    print(f"\\n--- ID {r['id']}: {r['question'][:55]}... ---")
+    print(f"  AT-F1={r['agent_tool_f1']:.2f}, Steps={r['num_steps']}(gold:{r['gold_steps']})")
+    print(f"  {r['generated'][:250]}")"""))
+
+    # ══════════════════════════════════════════════════════════════════
+    # 13. TRAIN SPECIALISTS
+    # ══════════════════════════════════════════════════════════════════
+    cells.append(md("""## 13. Train Specialist Models (Per-Agent Arg Generation)
+
+Each specialist is trained on step-level examples: given a task description + agent + tool name, it generates the correct arguments.
+
+In production: Planner outputs the routing → each step is sent to the matching specialist → specialist fills in args."""))
+
+    cells.append(code("""del peft_planner; torch.cuda.empty_cache()
+
 specialist_models = {}
-
-for agent_name, data in specialist_data.items():
+for agent_name, data in sorted(specialist_data.items()):
     if len(data) < 20:
-        print(f"\\nSkipping {agent_name}: only {len(data)} examples (need >=20)")
+        print(f"Skipping {agent_name}: {len(data)} examples (need >=20)")
         continue
     print(f"\\n{'='*50}")
-    print(f"  Training specialist: {agent_name} ({len(data)} examples)")
+    print(f"  Specialist: {agent_name} ({len(data)} examples)")
     print(f"{'='*50}")
-
-    # Fresh LoRA on base model
     spec_model = setup_lora(model)
     random.shuffle(data)
     sp = int(len(data) * 0.9)
     spec_dir = f"{OUTPUT_DIR}/specialist_{agent_name}"
-
-    spec_trainer = train_model(spec_model, data[:sp], data[sp:] if sp < len(data) else None, spec_dir, epochs=NUM_EPOCHS)
-    specialist_trainers[agent_name] = spec_trainer
+    train_model(spec_model, data[:sp], data[sp:] if sp < len(data) else None, spec_dir)
     specialist_models[agent_name] = spec_model
 
-print(f"\\nTrained {len(specialist_models)} specialist models: {list(specialist_models.keys())}")"""))
+print(f"\\nTrained {len(specialist_models)} specialists: {list(specialist_models.keys())}")"""))
 
     # ══════════════════════════════════════════════════════════════════
-    # 12. EVALUATE SPECIALISTS
+    # 14. EVALUATE PLANNER + SPECIALIST PIPELINE
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("""## 12. Evaluate Specialist Models
+    cells.append(md("""## 14. Evaluate Planner + Specialist Pipeline
 
-For each scenario, we route it to the specialist that matches its primary agent.
-Scenarios requiring multiple agents use the specialist for the first agent in the gold plan."""))
+The full pipeline: Planner generates routing → each step is sent to the matching specialist for arg generation → combine into final plan.
 
-    cells.append(code("""# Route each eval scenario to the right specialist
-specialist_results = []
-specialist_hit = 0
-specialist_miss = 0
+We evaluate the *combined output* against the gold plan."""))
 
-for sc in tqdm(eval_scenarios, desc="Eval (Specialists)"):
-    # Determine which specialist should handle this
-    gold_agents = [a for a in sc.get("gold_agents", []) if a not in ("none", "")]
-    primary_agent = gold_agents[0] if gold_agents else None
+    cells.append(code("""# For each eval scenario, run the planner then specialists
+pipeline_results = []
 
-    if primary_agent and primary_agent in specialist_models:
-        spec_model = specialist_models[primary_agent]
-        specialist_hit += 1
-    else:
-        # Fall back to first available specialist or skip
-        spec_model = list(specialist_models.values())[0] if specialist_models else None
-        specialist_miss += 1
-
-    if spec_model is None:
+for sc in tqdm(eval_scenarios, desc="Eval (Planner+Specialist pipeline)"):
+    # Step 1: Planner generates routing
+    planner_r = [r for r in planner_blind_results if r["id"] == sc["id"]]
+    if not planner_r:
         continue
+    planner_output = planner_r[0]["generated"]
+    planner_steps = parse_plan(planner_output)
 
-    # Run inference
-    prompt = BLIND_PROMPT.format(question=sc["question"])
-    chat = [{"role": "user", "content": prompt}]
-    tokenized = tokenizer.apply_chat_template(chat, return_tensors="pt", add_generation_prompt=True, return_dict=True)
-    input_ids = tokenized["input_ids"].to(spec_model.device)
-    attention_mask = tokenized["attention_mask"].to(spec_model.device)
-    input_len = input_ids.shape[1]
+    # Step 2: For each step, ask the specialist to fill in args
+    full_plan_lines = []
+    for step in planner_steps:
+        agent = step["agent"]
+        tool = step["tool"]
 
-    with torch.no_grad():
-        output_ids = spec_model.generate(input_ids=input_ids, attention_mask=attention_mask,
-                                          max_new_tokens=MAX_NEW_TOKENS, temperature=TEMPERATURE,
-                                          top_p=TOP_P, do_sample=True,
-                                          pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id)
-    generated = tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True)
-    metrics = evaluate_plan(generated, sc["gold_plan"])
+        if agent in specialist_models:
+            spec = specialist_models[agent]
+            spec_prompt = f"Generate the arguments for this tool call:\\nTask: {step['task']}\\nAgent: {agent}\\nTool: {tool}\\nDependency: None"
+            chat = [{"role": "user", "content": spec_prompt}]
+            tokenized = tokenizer.apply_chat_template(chat, return_tensors="pt", add_generation_prompt=True, return_dict=True)
+            input_ids = tokenized["input_ids"].to(spec.device)
+            attention_mask = tokenized["attention_mask"].to(spec.device)
+            with torch.no_grad():
+                out = spec.generate(input_ids=input_ids, attention_mask=attention_mask,
+                                     max_new_tokens=256, temperature=TEMPERATURE, top_p=TOP_P,
+                                     do_sample=True, pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id)
+            spec_output = tokenizer.decode(out[0][input_ids.shape[1]:], skip_special_tokens=True)
+            args_m = re.search(r'#Args:\\s*(.*)', spec_output)
+            exp_m = re.search(r'#ExpectedOutput:\\s*(.*)', spec_output)
+            args = args_m.group(1).strip() if args_m else "{}"
+            expected = exp_m.group(1).strip() if exp_m else ""
+        else:
+            args, expected = "{}", ""
+
+        full_plan_lines.append(f"#Task{step['step']}: {step['task']}")
+        full_plan_lines.append(f"#Agent{step['step']}: {agent}")
+        full_plan_lines.append(f"#Tool{step['step']}: {tool}")
+        full_plan_lines.append(f"#Args{step['step']}: {args}")
+        full_plan_lines.append(f"#Dependency{step['step']}: None")
+        if expected:
+            full_plan_lines.append(f"#ExpectedOutput{step['step']}: {expected}")
+        full_plan_lines.append("")
+
+    combined_plan = "\\n".join(full_plan_lines)
+    metrics = evaluate_plan(combined_plan, sc["gold_plan"])
     metrics.update({"id": sc["id"], "question": sc["question"], "type": sc.get("type", ""),
-                    "generated": generated[:2000], "input_tokens": input_len,
-                    "output_tokens": output_ids.shape[1] - input_len, "mode": "Specialist: Blind",
-                    "routed_to": primary_agent})
-    specialist_results.append(metrics)
+                    "generated": combined_plan[:2000], "input_tokens": 0, "output_tokens": 0,
+                    "mode": "Pipeline: Planner+Specialist"})
+    pipeline_results.append(metrics)
 
-spec_blind_summary = summarize_results(specialist_results, "Specialist: Blind")
-print(f"\\nRouting: {specialist_hit} matched specialist, {specialist_miss} fell back")
-print_summary(spec_blind_summary)"""))
+pipeline_summary = summarize_results(pipeline_results, "Pipeline: Planner+Specialist")
+print_summary(pipeline_summary)"""))
 
     # ══════════════════════════════════════════════════════════════════
-    # 13. FULL COMPARISON
+    # 15. FULL COMPARISON
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("## 13. Full Comparison — Baseline vs Generalist vs Specialists"))
+    cells.append(md("## 15. Full Comparison — All Approaches"))
 
     cells.append(code("""all_summaries = [
     baseline_informed_summary,
     baseline_blind_summary,
     gen_informed_summary,
     gen_blind_summary,
-    spec_blind_summary,
+    planner_blind_summary,
+    pipeline_summary,
 ]
 
 comp = pd.DataFrame(all_summaries)
 cols = ["mode", "format_valid_pct", "avg_agent_tool_f1", "avg_rouge_l",
         "agent_correctness", "tool_correctness", "avg_steps", "avg_input_tokens"]
 comp = comp[[c for c in cols if c in comp.columns]]
-comp.columns = ["Mode", "Format%", "AT-F1", "ROUGE-L", "Agent%", "Tool%", "Steps", "Tokens In"]
+comp.columns = ["Mode", "Format%", "AT-F1", "ROUGE-L", "Agent%", "Tool%", "Steps", "Tokens"]
 
-print("\\n" + "=" * 100)
-print("  FULL COMPARISON")
-print("=" * 100)
+print("\\n" + "=" * 110)
+print("  FULL COMPARISON: 6 Approaches")
+print("=" * 110)
 print(comp.to_string(index=False, float_format="%.3f"))
 
-# Key improvements
-blind_before = baseline_blind_summary["avg_agent_tool_f1"]
-gen_after = gen_blind_summary["avg_agent_tool_f1"]
-spec_after = spec_blind_summary["avg_agent_tool_f1"]
-print(f"\\nBLIND MODE AT-F1: Baseline {blind_before:.3f} → Generalist {gen_after:.3f} → Specialist {spec_after:.3f}")
-print(f"Token savings: {token_overhead:.0f} tokens/query ({100*token_overhead/baseline_informed_summary['avg_input_tokens']:.0f}% of informed prompt)")"""))
+print(f"\\nKey results:")
+print(f"  Baseline blind AT-F1:         {baseline_blind_summary['avg_agent_tool_f1']:.3f}")
+print(f"  Generalist blind AT-F1:       {gen_blind_summary['avg_agent_tool_f1']:.3f}")
+print(f"  Planner-only blind AT-F1:     {planner_blind_summary['avg_agent_tool_f1']:.3f}")
+print(f"  Planner+Specialist AT-F1:     {pipeline_summary['avg_agent_tool_f1']:.3f}")"""))
 
     cells.append(code("""# Visualization
-fig, axes = plt.subplots(1, 4, figsize=(20, 5))
-modes = ["Base\\nInformed", "Base\\nBlind", "Gen\\nInformed", "Gen\\nBlind", "Spec\\nBlind"]
-colors = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6"]
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+modes = ["Base\\nInformed", "Base\\nBlind", "Gen\\nInformed", "Gen\\nBlind", "Planner\\nBlind", "Pipeline\\nP+S"]
+colors = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899"]
 
 for ax, metric, title in [
     (axes[0], "format_valid_pct", "Format Valid (%)"),
     (axes[1], "avg_agent_tool_f1", "Agent-Tool F1"),
     (axes[2], "agent_correctness", "Agent Correctness"),
-    (axes[3], "avg_input_tokens", "Avg Input Tokens"),
 ]:
     vals = [s.get(metric, 0) for s in all_summaries]
-    bars = ax.bar(modes, vals, color=colors)
-    ax.set_title(title)
+    ax.bar(modes, vals, color=colors)
+    ax.set_title(title, fontsize=11)
     for i, v in enumerate(vals):
-        fmt = f"{v:.0f}" if metric in ("format_valid_pct", "avg_input_tokens") else f"{v:.3f}"
-        ax.text(i, v + max(vals)*0.02, fmt, ha="center", fontweight="bold", fontsize=8)
+        fmt = f"{v:.0f}%" if "pct" in metric else f"{v:.3f}"
+        ax.text(i, v + max(vals)*0.02, fmt, ha="center", fontweight="bold", fontsize=7)
 
-plt.suptitle(f"AssetOpsBench: {MODEL_ID}", fontsize=13, y=1.02)
+plt.suptitle(f"AssetOpsBench: {MODEL_ID} — All Approaches Compared", fontsize=13, y=1.02)
 plt.tight_layout()
-plt.savefig(f"{OUTPUT_DIR}/comparison_chart.png", dpi=150, bbox_inches="tight")
+plt.savefig(f"{OUTPUT_DIR}/full_comparison.png", dpi=150, bbox_inches="tight")
 plt.show()"""))
 
     # ══════════════════════════════════════════════════════════════════
-    # 14. PER-DOMAIN SPECIALIST VS GENERALIST
+    # 16. PER-DOMAIN ANALYSIS
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("## 14. Per-Domain: Specialist vs Generalist"))
+    cells.append(md("## 16. Per-Domain Analysis"))
 
-    cells.append(code("""# Compare specialist vs generalist per scenario type
-gen_by_id = {r["id"]: r for r in gen_blind_results}
-spec_by_id = {r["id"]: r for r in specialist_results}
+    cells.append(code("""gen_by_id = {r["id"]: r for r in gen_blind_results}
+plan_by_id = {r["id"]: r for r in planner_blind_results}
+pipe_by_id = {r["id"]: r for r in pipeline_results}
 
 rows = []
 for sc in eval_scenarios:
     sid = sc["id"]
-    g = gen_by_id.get(sid, {})
-    s = spec_by_id.get(sid, {})
     rows.append({
         "id": sid, "type": sc["type"],
-        "gen_atf1": g.get("agent_tool_f1", 0), "gen_rouge": g.get("rouge_l", 0),
-        "spec_atf1": s.get("agent_tool_f1", 0), "spec_rouge": s.get("rouge_l", 0),
-        "spec_better": s.get("agent_tool_f1", 0) > g.get("agent_tool_f1", 0),
+        "gen_atf1": gen_by_id.get(sid, {}).get("agent_tool_f1", 0),
+        "planner_atf1": plan_by_id.get(sid, {}).get("agent_tool_f1", 0),
+        "pipeline_atf1": pipe_by_id.get(sid, {}).get("agent_tool_f1", 0),
+        "gen_rouge": gen_by_id.get(sid, {}).get("rouge_l", 0),
+        "pipeline_rouge": pipe_by_id.get(sid, {}).get("rouge_l", 0),
     })
 
 df = pd.DataFrame(rows)
-print("Per-type comparison (AT-F1):")
+print("Per-type comparison:")
 type_comp = df.groupby("type").agg(
-    gen_atf1=("gen_atf1", "mean"), spec_atf1=("spec_atf1", "mean"),
-    gen_rouge=("gen_rouge", "mean"), spec_rouge=("spec_rouge", "mean"),
-    spec_wins=("spec_better", "sum"), count=("id", "count"),
+    gen_atf1=("gen_atf1", "mean"), planner_atf1=("planner_atf1", "mean"),
+    pipeline_atf1=("pipeline_atf1", "mean"), count=("id", "count"),
 ).round(3)
 print(type_comp.to_string())
 
-spec_wins = df["spec_better"].sum()
-print(f"\\nSpecialist wins: {spec_wins}/{len(df)} scenarios ({100*spec_wins/len(df):.0f}%)")"""))
+# Which approach wins per type?
+for t in type_comp.index:
+    best_col = type_comp.loc[t, ["gen_atf1", "planner_atf1", "pipeline_atf1"]].idxmax()
+    best_val = type_comp.loc[t, best_col]
+    print(f"  {t}: best={best_col} ({best_val:.3f})")"""))
 
     # ══════════════════════════════════════════════════════════════════
-    # 15. TOKEN SAVINGS ANALYSIS
+    # 17. TOKEN SAVINGS
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("## 15. Token Savings Analysis"))
+    cells.append(md("## 17. Token Savings"))
 
-    cells.append(code("""print("=" * 60)
-print("  TOKEN SAVINGS ANALYSIS")
-print("=" * 60)
-informed_tok = baseline_informed_summary["avg_input_tokens"]
+    cells.append(code("""informed_tok = baseline_informed_summary["avg_input_tokens"]
 blind_tok = gen_blind_summary["avg_input_tokens"]
 savings = informed_tok - blind_tok
 
-print(f"  Informed prompt:  {informed_tok:.0f} tokens")
-print(f"  Blind prompt:     {blind_tok:.0f} tokens")
-print(f"  Savings/query:    {savings:.0f} tokens ({100*savings/informed_tok:.0f}%)")
-print(f"  For 152 scenarios: {savings*152:,.0f} tokens saved")
-print(f"  For 1000 queries/day: {savings*1000:,.0f} tokens/day")
-print()
-gen_q = gen_blind_summary.get("avg_agent_tool_f1", 0)
-spec_q = spec_blind_summary.get("avg_agent_tool_f1", 0)
-best_q = max(gen_q, spec_q)
-best_name = "Generalist" if gen_q >= spec_q else "Specialist"
-print(f"  Best blind-mode model: {best_name} (AT-F1={best_q:.3f})")
-print(f"  This model achieves {best_q:.1%} agent-tool accuracy WITHOUT tool descriptions.")"""))
+print("=" * 60)
+print("  TOKEN SAVINGS ANALYSIS")
+print("=" * 60)
+print(f"  Informed prompt:     {informed_tok:.0f} tokens (with tool descriptions)")
+print(f"  Blind prompt:        {blind_tok:.0f} tokens (no tool descriptions)")
+print(f"  Savings per query:   {savings:.0f} tokens ({100*savings/informed_tok:.0f}%)")
+print(f"  Per 152 scenarios:   {savings*152:,.0f} tokens saved")
+print(f"  Per 1000 queries/day: {savings*1000:,.0f} tokens/day")
+
+# The argument for specialist models
+print(f"\\n  Production architecture argument:")
+print(f"  - Planner model handles routing (small, fast)")
+print(f"  - Specialist models handle args (domain-specific, can run in parallel)")
+print(f"  - Combined latency can be LOWER than one generalist pass")
+print(f"  - Each specialist stays small and focused")"""))
 
     # ══════════════════════════════════════════════════════════════════
-    # 16. SAVE RESULTS
+    # 18. SAVE
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("## 16. Save Results"))
+    cells.append(md("## 18. Save Results"))
 
     cells.append(code("""results = {
     "config": {"model": MODEL_ID, "lora_r": LORA_R, "epochs": NUM_EPOCHS,
@@ -904,19 +987,16 @@ print(f"  This model achieves {best_q:.1%} agent-tool accuracy WITHOUT tool desc
 with open(f"{OUTPUT_DIR}/results.json", "w") as f:
     json.dump(results, f, indent=2, default=str)
 df.to_csv(f"{OUTPUT_DIR}/per_scenario.csv", index=False)
+print(f"Saved to {OUTPUT_DIR}/")
 
-print(f"Results saved to {OUTPUT_DIR}/")
 print(f"\\n{'='*60}")
 print(f"  EXPERIMENT COMPLETE")
 print(f"{'='*60}")
 for s in all_summaries:
-    print(f"  {s['mode']:35s}  AT-F1={s.get('avg_agent_tool_f1',0):.3f}  Agent={s.get('agent_correctness',0):.1%}")
-print(f"  Token savings: {savings:.0f}/query")"""))
+    print(f"  {s['mode']:40s} AT-F1={s.get('avg_agent_tool_f1',0):.3f} Agent={s.get('agent_correctness',0):.1%}")
+print(f"\\n  Token savings: {savings:.0f}/query ({100*savings/informed_tok:.0f}%)")"""))
 
-    # ══════════════════════════════════════════════════════════════════
-    # 17. DOWNLOAD
-    # ══════════════════════════════════════════════════════════════════
-    cells.append(md("## 17. (Optional) Download"))
+    cells.append(md("## 19. (Optional) Download"))
 
     cells.append(code("""os.system("cd /content && zip -r /content/assetops_results.zip output/")
 try:
