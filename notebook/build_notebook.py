@@ -451,6 +451,14 @@ def evaluate_plan(gen_text, gold_text):
     result["arg_key_f1"] = total_key_matches / total_keys if total_keys else 0.0
     result["arg_value_match"] = total_val_matches / total_vals if total_vals else 0.0
 
+    # Step count accuracy: 1.0 if exact match, penalize over/under decomposition
+    if result["gold_steps"] > 0:
+        result["step_match"] = 1.0 if result["num_steps"] == result["gold_steps"] else 0.0
+        result["step_ratio"] = result["num_steps"] / result["gold_steps"]
+    else:
+        result["step_match"] = 0.0
+        result["step_ratio"] = 0.0
+
     # ROUGE-L
     try:
         r = rouge_metric.compute(predictions=[gen_text], references=[gold_text])
@@ -502,6 +510,8 @@ def summarize_results(results, mode_name):
         "avg_output_tokens": np.mean([r.get("output_tokens", 0) for r in results]),
         "agent_correctness": sum(r["valid_agents"] for r in results) / max(sum(r["total_agents"] for r in results), 1),
         "tool_correctness": sum(r["valid_tools"] for r in results) / max(sum(r["total_tools"] for r in results), 1),
+        "step_exact_match": np.mean([r.get("step_match", 0) for r in results]),
+        "avg_step_ratio": np.mean([r.get("step_ratio", 0) for r in results]),
     }
 
 
@@ -516,6 +526,8 @@ def print_summary(s):
     print(f"  ROUGE-L:         {s.get('avg_rouge_l',0):.3f}")
     print(f"  Agent correct:   {s.get('agent_correctness',0):.1%}")
     print(f"  Tool correct:    {s.get('tool_correctness',0):.1%}")
+    print(f"  Step exact match: {s.get('step_exact_match',0):.1%}")
+    print(f"  Avg step ratio:  {s.get('avg_step_ratio',0):.2f}x (1.0=perfect)")
     print(f"  Avg steps:       {s.get('avg_steps',0):.1f}")
     print(f"  Avg tokens in:   {s.get('avg_input_tokens',0):.0f}")"""))
 
@@ -933,8 +945,9 @@ print_summary(pipeline_summary)"""))
 comp = pd.DataFrame(all_summaries)
 display_cols = {
     "mode": "Mode", "format_valid_pct": "Format%", "avg_agent_tool_f1": "AT-F1",
-    "avg_arg_key_f1": "ArgKey-F1", "avg_arg_value_match": "ArgVal%",
-    "avg_rouge_l": "ROUGE-L", "agent_correctness": "Agent%",
+    "avg_arg_key_f1": "ArgKey", "avg_arg_value_match": "ArgVal",
+    "step_exact_match": "StepEM", "avg_step_ratio": "StepR",
+    "avg_rouge_l": "ROUGE", "agent_correctness": "Agent%",
     "tool_correctness": "Tool%", "avg_steps": "Steps", "avg_input_tokens": "TokIn",
 }
 comp = comp[[c for c in display_cols if c in comp.columns]]
