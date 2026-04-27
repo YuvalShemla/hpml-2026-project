@@ -409,14 +409,26 @@ def evaluate_plan(gen_text, gold_text):
         result["total_tools"] += 1
         if s["tool"] in VALID_TOOLS: result["valid_tools"] += 1
 
+    # ── Tool-level set comparison ────────────────────────────────────
+    gen_tools = [s["tool"] for s in gen_steps if s["tool"] and s["tool"] != "none"]
+    gold_tools = [s["tool"] for s in gold_steps if s["tool"] and s["tool"] != "none"]
+    gen_tool_set = set(gen_tools)
+    gold_tool_set = set(gold_tools)
+
+    result["tools_correct"] = list(gen_tool_set & gold_tool_set)   # in both
+    result["tools_missing"] = list(gold_tool_set - gen_tool_set)   # in gold but not gen
+    result["tools_extra"] = list(gen_tool_set - gold_tool_set)     # in gen but not gold
+    result["tools_correct_n"] = len(result["tools_correct"])
+    result["tools_missing_n"] = len(result["tools_missing"])
+    result["tools_extra_n"] = len(result["tools_extra"])
+
     # Agent-Tool pair F1 (Jaccard)
     gen_pairs = {(s["agent"], s["tool"]) for s in gen_steps if s["agent"] and s["tool"]}
     gold_pairs = {(s["agent"], s["tool"]) for s in gold_steps if s["agent"] and s["tool"]}
     if gen_pairs or gold_pairs:
         result["agent_tool_f1"] = len(gen_pairs & gold_pairs) / len(gen_pairs | gold_pairs)
 
-    # Argument evaluation: match steps by (agent, tool) then compare args
-    # Build lookup: for each (agent, tool) in gold, collect expected args
+    # ── Argument evaluation ───────────────────────────────────────────
     gold_by_at = {}
     for s in gold_steps:
         key = (s["agent"], s["tool"])
@@ -425,33 +437,40 @@ def evaluate_plan(gen_text, gold_text):
 
     total_key_matches, total_keys = 0, 0
     total_val_matches, total_vals = 0, 0
+    args_correct, args_missing, args_extra = [], [], []
+
     for s in gen_steps:
         key = (s["agent"], s["tool"])
         if key in gold_by_at and s["args"]:
             gold_args = gold_by_at[key]
             gen_args = s["args"]
-            # Key F1: do the parameter names match?
             gold_keys = set(gold_args.keys())
             gen_keys = set(gen_args.keys())
             if gold_keys or gen_keys:
-                total_key_matches += len(gold_keys & gen_keys)
+                matched = gold_keys & gen_keys
+                total_key_matches += len(matched)
                 total_keys += len(gold_keys | gen_keys)
-            # Value match: for shared keys, do values match?
+                args_correct.extend(matched)
+                args_missing.extend(gold_keys - gen_keys)
+                args_extra.extend(gen_keys - gold_keys)
             shared_keys = gold_keys & gen_keys
             for k in shared_keys:
                 total_vals += 1
                 gv = str(gold_args[k]).strip().lower()
                 ev = str(gen_args.get(k, "")).strip().lower()
-                # Fuzzy match: exact, or both are {step_N} placeholders
-                if gv == ev:
+                if gv == ev or ("{step_" in gv and "{step_" in ev):
                     total_val_matches += 1
-                elif "{step_" in gv and "{step_" in ev:
-                    total_val_matches += 1  # both use placeholders (close enough)
 
     result["arg_key_f1"] = total_key_matches / total_keys if total_keys else 0.0
     result["arg_value_match"] = total_val_matches / total_vals if total_vals else 0.0
+    result["args_correct"] = args_correct
+    result["args_missing"] = args_missing   # in gold but model forgot
+    result["args_extra"] = args_extra       # model hallucinated
+    result["args_correct_n"] = len(args_correct)
+    result["args_missing_n"] = len(args_missing)
+    result["args_extra_n"] = len(args_extra)
 
-    # Step count accuracy: 1.0 if exact match, penalize over/under decomposition
+    # ── Step count ────────────────────────────────────────────────────
     if result["gold_steps"] > 0:
         result["step_match"] = 1.0 if result["num_steps"] == result["gold_steps"] else 0.0
         result["step_ratio"] = result["num_steps"] / result["gold_steps"]
@@ -512,6 +531,13 @@ def summarize_results(results, mode_name):
         "tool_correctness": sum(r["valid_tools"] for r in results) / max(sum(r["total_tools"] for r in results), 1),
         "step_exact_match": np.mean([r.get("step_match", 0) for r in results]),
         "avg_step_ratio": np.mean([r.get("step_ratio", 0) for r in results]),
+        # Counts
+        "total_tools_correct": sum(r.get("tools_correct_n", 0) for r in results),
+        "total_tools_missing": sum(r.get("tools_missing_n", 0) for r in results),
+        "total_tools_extra": sum(r.get("tools_extra_n", 0) for r in results),
+        "total_args_correct": sum(r.get("args_correct_n", 0) for r in results),
+        "total_args_missing": sum(r.get("args_missing_n", 0) for r in results),
+        "total_args_extra": sum(r.get("args_extra_n", 0) for r in results),
     }
 
 
@@ -529,7 +555,15 @@ def print_summary(s):
     print(f"  Step exact match: {s.get('step_exact_match',0):.1%}")
     print(f"  Avg step ratio:  {s.get('avg_step_ratio',0):.2f}x (1.0=perfect)")
     print(f"  Avg steps:       {s.get('avg_steps',0):.1f}")
-    print(f"  Avg tokens in:   {s.get('avg_input_tokens',0):.0f}")"""))
+    print(f"  Avg tokens in:   {s.get('avg_input_tokens',0):.0f}")
+    tc = s.get('total_tools_correct',0)
+    tm = s.get('total_tools_missing',0)
+    te = s.get('total_tools_extra',0)
+    print(f"  Tools:  {tc} correct, {tm} missing, {te} extra (hallucinated)")
+    ac = s.get('total_args_correct',0)
+    am = s.get('total_args_missing',0)
+    ae = s.get('total_args_extra',0)
+    print(f"  Args:   {ac} correct, {am} missing, {ae} extra (hallucinated)")"""))
 
     # ══════════════════════════════════════════════════════════════════
     # 5. BASELINE (HARDCODED)
