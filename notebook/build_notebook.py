@@ -362,6 +362,7 @@ QUESTION: {question}
 
 
 def parse_plan(text):
+    \"\"\"Parse a plan into structured steps with agent, tool, and args.\"\"\"
     steps = []
     if not text: return steps
     for block in re.split(r'(?=#Task\\d+:)', text):
@@ -369,35 +370,87 @@ def parse_plan(text):
         task_m = re.search(r'#Task(\\d+):\\s*(.*)', block)
         agent_m = re.search(r'#Agent\\d+:\\s*(\\S+)', block)
         tool_m = re.search(r'#Tool\\d+:\\s*(\\S+)', block)
+        args_m = re.search(r'#Args\\d+:\\s*(.*)', block)
         if task_m:
+            # Try to parse args as JSON
+            args_raw = args_m.group(1).strip() if args_m else "{}"
+            try:
+                args_parsed = json.loads(args_raw)
+            except (json.JSONDecodeError, TypeError):
+                args_parsed = {}
             steps.append({
                 "step": int(task_m.group(1)),
                 "task": task_m.group(2).strip(),
                 "agent": agent_m.group(1).strip() if agent_m else "",
                 "tool": tool_m.group(1).strip().rstrip("()") if tool_m else "",
+                "args": args_parsed,
+                "args_raw": args_raw,
             })
     return steps
 
 
 def evaluate_plan(gen_text, gold_text):
+    \"\"\"Evaluate generated plan vs gold on routing, args, and text similarity.\"\"\"
     result = {"has_plan_format": False, "num_steps": 0, "valid_agents": 0,
               "total_agents": 0, "valid_tools": 0, "total_tools": 0,
-              "agent_tool_f1": 0.0, "gold_steps": 0, "rouge_l": 0.0}
+              "agent_tool_f1": 0.0, "gold_steps": 0, "rouge_l": 0.0,
+              "arg_key_f1": 0.0, "arg_value_match": 0.0}
     if "#Task" in gen_text and "#Agent" in gen_text:
         result["has_plan_format"] = True
     gen_steps = parse_plan(gen_text)
     gold_steps = parse_plan(gold_text)
     result["num_steps"] = len(gen_steps)
     result["gold_steps"] = len(gold_steps)
+
+    # Agent & tool validity
     for s in gen_steps:
         result["total_agents"] += 1
         if s["agent"] in VALID_AGENTS: result["valid_agents"] += 1
         result["total_tools"] += 1
         if s["tool"] in VALID_TOOLS: result["valid_tools"] += 1
+
+    # Agent-Tool pair F1 (Jaccard)
     gen_pairs = {(s["agent"], s["tool"]) for s in gen_steps if s["agent"] and s["tool"]}
     gold_pairs = {(s["agent"], s["tool"]) for s in gold_steps if s["agent"] and s["tool"]}
     if gen_pairs or gold_pairs:
         result["agent_tool_f1"] = len(gen_pairs & gold_pairs) / len(gen_pairs | gold_pairs)
+
+    # Argument evaluation: match steps by (agent, tool) then compare args
+    # Build lookup: for each (agent, tool) in gold, collect expected args
+    gold_by_at = {}
+    for s in gold_steps:
+        key = (s["agent"], s["tool"])
+        if key not in gold_by_at and s["args"]:
+            gold_by_at[key] = s["args"]
+
+    total_key_matches, total_keys = 0, 0
+    total_val_matches, total_vals = 0, 0
+    for s in gen_steps:
+        key = (s["agent"], s["tool"])
+        if key in gold_by_at and s["args"]:
+            gold_args = gold_by_at[key]
+            gen_args = s["args"]
+            # Key F1: do the parameter names match?
+            gold_keys = set(gold_args.keys())
+            gen_keys = set(gen_args.keys())
+            if gold_keys or gen_keys:
+                total_key_matches += len(gold_keys & gen_keys)
+                total_keys += len(gold_keys | gen_keys)
+            # Value match: for shared keys, do values match?
+            shared_keys = gold_keys & gen_keys
+            for k in shared_keys:
+                total_vals += 1
+                gv = str(gold_args[k]).strip().lower()
+                ev = str(gen_args.get(k, "")).strip().lower()
+                # Fuzzy match: exact, or both are {step_N} placeholders
+                if gv == ev:
+                    total_val_matches += 1
+                elif "{step_" in gv and "{step_" in ev:
+                    total_val_matches += 1  # both use placeholders (close enough)
+
+    result["arg_key_f1"] = total_key_matches / total_keys if total_keys else 0.0
+    result["arg_value_match"] = total_val_matches / total_vals if total_vals else 0.0
+
     # ROUGE-L
     try:
         r = rouge_metric.compute(predictions=[gen_text], references=[gold_text])
@@ -441,10 +494,12 @@ def summarize_results(results, mode_name):
         "mode": mode_name, "total": n,
         "format_valid": fmt_ok, "format_valid_pct": 100 * fmt_ok / n,
         "avg_agent_tool_f1": np.mean([r["agent_tool_f1"] for r in results]),
+        "avg_arg_key_f1": np.mean([r.get("arg_key_f1", 0) for r in results]),
+        "avg_arg_value_match": np.mean([r.get("arg_value_match", 0) for r in results]),
         "avg_rouge_l": np.mean([r["rouge_l"] for r in results]),
         "avg_steps": np.mean([r["num_steps"] for r in results]),
-        "avg_input_tokens": np.mean([r["input_tokens"] for r in results]),
-        "avg_output_tokens": np.mean([r["output_tokens"] for r in results]),
+        "avg_input_tokens": np.mean([r.get("input_tokens", 0) for r in results]),
+        "avg_output_tokens": np.mean([r.get("output_tokens", 0) for r in results]),
         "agent_correctness": sum(r["valid_agents"] for r in results) / max(sum(r["total_agents"] for r in results), 1),
         "tool_correctness": sum(r["valid_tools"] for r in results) / max(sum(r["total_tools"] for r in results), 1),
     }
@@ -454,13 +509,15 @@ def print_summary(s):
     print(f"\\n{'='*55}")
     print(f"  {s['mode']} — {s['total']} scenarios")
     print(f"{'='*55}")
-    print(f"  Format valid:   {s.get('format_valid',0)}/{s['total']} ({s.get('format_valid_pct',0):.1f}%)")
-    print(f"  Agent-Tool F1:  {s.get('avg_agent_tool_f1',0):.3f}")
-    print(f"  ROUGE-L:        {s.get('avg_rouge_l',0):.3f}")
-    print(f"  Agent correct:  {s.get('agent_correctness',0):.1%}")
-    print(f"  Tool correct:   {s.get('tool_correctness',0):.1%}")
-    print(f"  Avg steps:      {s.get('avg_steps',0):.1f}")
-    print(f"  Avg tokens in:  {s.get('avg_input_tokens',0):.0f}")"""))
+    print(f"  Format valid:    {s.get('format_valid',0)}/{s['total']} ({s.get('format_valid_pct',0):.1f}%)")
+    print(f"  Agent-Tool F1:   {s.get('avg_agent_tool_f1',0):.3f}")
+    print(f"  Arg key F1:      {s.get('avg_arg_key_f1',0):.3f}")
+    print(f"  Arg value match: {s.get('avg_arg_value_match',0):.3f}")
+    print(f"  ROUGE-L:         {s.get('avg_rouge_l',0):.3f}")
+    print(f"  Agent correct:   {s.get('agent_correctness',0):.1%}")
+    print(f"  Tool correct:    {s.get('tool_correctness',0):.1%}")
+    print(f"  Avg steps:       {s.get('avg_steps',0):.1f}")
+    print(f"  Avg tokens in:   {s.get('avg_input_tokens',0):.0f}")"""))
 
     # ══════════════════════════════════════════════════════════════════
     # 5. BASELINE (HARDCODED)
@@ -874,10 +931,14 @@ print_summary(pipeline_summary)"""))
 ]
 
 comp = pd.DataFrame(all_summaries)
-cols = ["mode", "format_valid_pct", "avg_agent_tool_f1", "avg_rouge_l",
-        "agent_correctness", "tool_correctness", "avg_steps", "avg_input_tokens"]
-comp = comp[[c for c in cols if c in comp.columns]]
-comp.columns = ["Mode", "Format%", "AT-F1", "ROUGE-L", "Agent%", "Tool%", "Steps", "Tokens"]
+display_cols = {
+    "mode": "Mode", "format_valid_pct": "Format%", "avg_agent_tool_f1": "AT-F1",
+    "avg_arg_key_f1": "ArgKey-F1", "avg_arg_value_match": "ArgVal%",
+    "avg_rouge_l": "ROUGE-L", "agent_correctness": "Agent%",
+    "tool_correctness": "Tool%", "avg_steps": "Steps", "avg_input_tokens": "TokIn",
+}
+comp = comp[[c for c in display_cols if c in comp.columns]]
+comp.columns = [display_cols[c] for c in comp.columns]
 
 print("\\n" + "=" * 110)
 print("  FULL COMPARISON: 6 Approaches")
