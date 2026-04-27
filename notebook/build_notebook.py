@@ -126,9 +126,16 @@ LORA_DROPOUT = 0.05
 LORA_TARGET_MODULES = "all-linear"
 
 # ── Training ──────────────────────────────────────────────────
-MAX_SEQ_LENGTH = 2048
-PER_DEVICE_BATCH_SIZE = 4
-GRADIENT_ACCUMULATION_STEPS = 4
+# Auto-adjust for GPU memory (A100 40GB vs 80GB)
+_gpu_mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9 if torch.cuda.is_available() else 40
+if _gpu_mem_gb > 60:  # 80GB GPU
+    MAX_SEQ_LENGTH = 2048
+    PER_DEVICE_BATCH_SIZE = 4
+    GRADIENT_ACCUMULATION_STEPS = 4
+else:  # 40GB GPU
+    MAX_SEQ_LENGTH = 1024
+    PER_DEVICE_BATCH_SIZE = 2
+    GRADIENT_ACCUMULATION_STEPS = 8
 LEARNING_RATE = 2e-4
 NUM_EPOCHS = 3
 WARMUP_RATIO = 0.05
