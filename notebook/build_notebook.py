@@ -44,7 +44,7 @@ def build_notebook():
 Pipeline on **1x H100 (80 GB)**:
 
 1. **Setup & data** — clone repo, load datasets, create proper train/test split (no leakage)
-2. **Baseline results** — hardcoded from prior Gemma 3 run (informed vs blind mode)
+2. **Baseline evaluation** — test the base model in informed (with tool descriptions) and blind (no descriptions) mode
 3. **Generalist fine-tuning** — train one model on ALL tool knowledge + plans
 4. **Specialist fine-tuning** — train per-domain models (IoT, FMSR, TSFM, WorkOrder)
 5. **Evaluation** — compare generalist vs specialists on held-out scenarios, measure token savings
@@ -109,7 +109,6 @@ LIGHT_MODE = True
 
 # ── Model ─────────────────────────────────────────────────────
 MODEL_ID = "google/gemma-4-E4B-it"  # 4.5B params (2.3B effective)
-# MODEL_ID = "google/gemma-3-4b-it"  # fallback if Gemma 4 has issues
 LOAD_IN_8BIT = True  # 8-bit for Gemma 4 (4-bit has known bnb bug)
 
 HF_TOKEN = ""
@@ -589,33 +588,30 @@ def print_summary(s):
     # ══════════════════════════════════════════════════════════════════
     # 5. BASELINE (HARDCODED)
     # ══════════════════════════════════════════════════════════════════
-    cells.append(md("""## 5. Baseline Results (Pre-computed, Gemma 3 4B)
+    cells.append(md("""## 5. Baseline Evaluation (No Fine-Tuning)
 
-Baseline from prior run on `google/gemma-3-4b-it` (4-bit, 50 scenarios).
+Test the base model on held-out scenarios in two modes:
+- **Informed** — full tool descriptions in the prompt (the "easy" mode)
+- **Blind** — no tool descriptions (the "hard" mode, what fine-tuning must fix)"""))
 
-**Key finding:** Blind mode produces valid *format* (100%) but completely hallucinated agents ("Data Retrieval Agent", "MCP Query Tool") — **0% correct agents/tools**. The format is learned from pre-training; the actual tool catalog is not."""))
+    cells.append(code("""print(f"Running baseline evaluation on {len(eval_scenarios)} scenarios...")
 
-    cells.append(code("""# Hardcoded from prior Gemma 3 run (avoids re-running ~40 min)
-baseline_informed_summary = {
-    "mode": "Baseline: Informed (Gemma 3)",
-    "total": 50, "format_valid": 43, "format_valid_pct": 86.0,
-    "avg_agent_tool_f1": 0.237, "avg_rouge_l": 0.0, "avg_steps": 3.8,
-    "avg_input_tokens": 796.4, "avg_output_tokens": 320.0,
-    "agent_correctness": 0.742, "tool_correctness": 0.953,
-}
-baseline_blind_summary = {
-    "mode": "Baseline: Blind (Gemma 3)",
-    "total": 50, "format_valid": 50, "format_valid_pct": 100.0,
-    "avg_agent_tool_f1": 0.0, "avg_rouge_l": 0.0, "avg_steps": 3.22,
-    "avg_input_tokens": 162.4, "avg_output_tokens": 303.0,
-    "agent_correctness": 0.0, "tool_correctness": 0.0,
-}
-
+baseline_informed_results, baseline_informed_summary = run_evaluation(
+    model, tokenizer, eval_scenarios, INFORMED_PROMPT, "Baseline: Informed",
+    tool_descriptions=TOOL_DESCRIPTIONS)
 print_summary(baseline_informed_summary)
+
+baseline_blind_results, baseline_blind_summary = run_evaluation(
+    model, tokenizer, eval_scenarios, BLIND_PROMPT, "Baseline: Blind")
 print_summary(baseline_blind_summary)
 
 token_overhead = baseline_informed_summary["avg_input_tokens"] - baseline_blind_summary["avg_input_tokens"]
-print(f"\\nToken overhead from tool descriptions: {token_overhead:.0f} tokens ({100*token_overhead/baseline_informed_summary['avg_input_tokens']:.0f}% of informed prompt)")"""))
+print(f"\\nToken overhead from tool descriptions: {token_overhead:.0f} tokens ({100*token_overhead/baseline_informed_summary['avg_input_tokens']:.0f}% of informed prompt)")
+
+# Show a few blind examples to see the hallucinated agents
+print("\\nBlind mode examples (expect hallucinated agents):")
+for r in baseline_blind_results[:3]:
+    print(f"  ID {r['id']}: AT-F1={r['agent_tool_f1']:.2f}, {r['generated'][:150]}")"""))
 
     # ══════════════════════════════════════════════════════════════════
     # 6. LOAD MODEL
@@ -659,15 +655,6 @@ def setup_lora(base_model):
     lora_config = LoraConfig(r=LORA_R, lora_alpha=LORA_ALPHA, lora_dropout=LORA_DROPOUT,
                               target_modules=LORA_TARGET_MODULES, bias="none", task_type=TaskType.CAUSAL_LM)
     m = get_peft_model(m, lora_config)
-    # Gemma 3 token_type_ids fix
-    if "gemma-3" in MODEL_ID:
-        _orig = m.forward
-        def _patched(*args, **kwargs):
-            if "input_ids" in kwargs and "token_type_ids" not in kwargs:
-                kwargs["token_type_ids"] = torch.zeros_like(kwargs["input_ids"])
-            return _orig(*args, **kwargs)
-        m.forward = _patched
-        print("Applied Gemma 3 token_type_ids patch")
     t, total = m.get_nb_trainable_parameters()
     print(f"Trainable: {t:,} / {total:,} ({100*t/total:.2f}%)")
     return m
