@@ -1,0 +1,23 @@
+# Core dependencies (pinned to versions used for reported results)
+couchdb3>=2.0.2
+fastmcp>=2.14.5
+mcp[cli]>=1.26.0
+pendulum>=3.2.0
+pydantic>=2.12.5
+requests>=2.32.5
+uvicorn>=0.41.0
+numpy>=1.24
+pandas>=2.0
+pyyaml>=6.0
+litellm>=1.0
+python-dotenv>=1.0
+datasets>=4.8.4
+transformers>=5.6.2
+
+# Fine-tuning (run on A100 GPU)
+torch>=2.0
+peft>=0.15.0
+trl>=0.18.0
+bitsandbytes>=0.45.0
+accelerate>=1.7.0
+wandb>=0.19.0

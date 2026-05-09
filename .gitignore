@@ -205,3 +205,6 @@ mcp/servers/tsfm/artifacts/tsfm_models/
 .env.local
 credentials/
 claude_dumps/
+wandb/
+notebook/generate_figures.py
+notebook/wandb_export*.csv
