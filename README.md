@@ -157,7 +157,7 @@ Our team used AI tools, including ChatGPT, Gemini, and Claude, to help write and
 ## Citation
 If you build on this work, please cite:
 ```bibtex
-@misc{teamname2026hpml,
+@misc{group20_2026hpml,
 title = {[Internalizing MCP Tool Knowledge in Small LLMs via QLoRA Fine-Tuning
 ]},
 author = {Agarwal, Tanmay and Shemla, Yuval and Yakobe, Ayal},
