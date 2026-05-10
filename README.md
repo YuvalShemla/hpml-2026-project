@@ -150,7 +150,9 @@ hpml_group_20/
 
 ## AI Tool Use
 
-Our team used AI tools, including ChatGPT, Gemini, and Claude, to help write and run specific tests and to polish the writing in our paper. All research decisions, ideas, analysis, and conclusions are our own and were verified in our runs.
+Our team used AI assistance, including ChatGPT, Gemini, and Claude, during the project. We used these tools to help draft and run our data-generation pipeline and targeted tests, debug implementation issues, clarify technical concepts, and polish the wording of the final paper.
+
+All research decisions, experimental design choices, analysis, interpretations, and conclusions are our own. We verified correctness by independently running the relevant experiments and tests and reviewing any AI-assisted code or suggestions before using them.
 
 ---
 
