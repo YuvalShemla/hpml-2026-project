@@ -154,6 +154,26 @@ Our team used AI tools, including ChatGPT, Gemini, and Claude, to help write and
 
 ---
 
+## Citation
+If you build on this work, please cite:
+```bibtex
+@misc{teamname2026hpml,
+title = {[Internalizing MCP Tool Knowledge in Small LLMs via QLoRA Fine-Tuning
+]},
+author = {Agarwal, Tanmay and Shemla, Yuval and Yakobe, Ayal},
+year = {2026},
+note = {HPML Spring 2026 Final Project, Columbia University},
+url = {https://github.com/YuvalShemla/hpml-2026-project.git}
+}
+```
+## Contact
+Open a GitHub Issue or email: 
+- Tanmay Agarwal: ta2830@columbia.edu
+- Yuval Shemla: ys3571@columbia.edu
+- Ayal Yakobe: amy2127@columbia.edu
+
+---
+
 ## Links
 
 - [AssetOpsBench Paper](https://openreview.net/forum?id=ld6JUQbhes)
