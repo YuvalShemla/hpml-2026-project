@@ -150,7 +150,7 @@ hpml_group_20/
 
 ## AI Tool Use
 
-Our team used AI tools, including ChatGPT, Gemini, and Claude, to help write and run specific tests and to polish the writing in our paper. All research decisions, ideas, analysis, and conclusions are our own.
+Our team used AI tools, including ChatGPT, Gemini, and Claude, to help write and run specific tests and to polish the writing in our paper. All research decisions, ideas, analysis, and conclusions are our own and were verified in our runs.
 
 ---
 
