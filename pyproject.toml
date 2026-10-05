@@ -3,14 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/workflow", "src/llm"]
+packages = ["src/workflow", "src/llm", "src/servers"]
 
 [project]
 name = "assetopsbench-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "AssetOpsBench MCP environment with description-free tool planning experiments"
 readme = "INSTRUCTIONS.md"
 requires-python = ">=3.12"
+
 dependencies = [
     "couchdb3>=2.0.2",
     "fastmcp>=2.14.5",
@@ -26,15 +27,18 @@ dependencies = [
     "python-dotenv>=1.0",
     "datasets>=4.8.4",
     "transformers>=5.6.2",
+    "scipy>=1.10",
 ]
 
 [project.scripts]
 plan-execute = "workflow.cli:main"
+
 iot-mcp-server = "servers.iot.main:main"
 utilities-mcp-server = "servers.utilities.main:main"
 fmsr-mcp-server = "servers.fmsr.main:main"
 tsfm-mcp-server = "servers.tsfm.main:main"
-
+wo-mcp-server = "servers.wo.main:main"
+vibration-mcp-server = "servers.vibration.main:main"
 
 [dependency-groups]
 dev = [
@@ -52,4 +56,3 @@ norecursedirs = ["src/tmp"]
 filterwarnings = [
     "ignore:Core Pydantic V1 functionality:UserWarning",
 ]
-
