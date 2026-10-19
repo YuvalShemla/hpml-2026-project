@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "prompt": "What IoT sites are available?",
+    "gold_steps": 1,
+    "gold_response": "#Task1: Retrieve the list of available IoT sites.\n#Agent1: IoTAgent\n#Tool1: sites\n#Args1: {}\n#Dependency1: None\n#ExpectedOutput1: A list of site names.",
+    "answer": "The available IoT sites are MAIN and NORTH.",
+    "plan": [
+      {
+        "step": 1,
+        "task": "List available IoT sites",
+        "agent": "IoTAgent",
+        "tool": "sites",
+        "tool_args": {},
+        "dependencies": [],
+        "expected_output": "SitesResult containing distinct site identifiers or [\"MAIN\"] if none available"
+      }
+    ],
+    "history": [
+      {
+        "step": 1,
+        "task": "List available IoT sites",
+        "agent": "IoTAgent",
+        "tool": "sites",
+        "tool_args": {},
+        "response": "{\n  \"sites\": [\n    \"MAIN\",\n    \"NORTH\"\n  ]\n}",
+        "error": null,
+        "success": true
+      }
+    ],
+    "plan_steps": 1,
+    "steps_succeeded": 1,
+    "steps_failed": 0,
+    "all_succeeded": true,
+    "elapsed_seconds": 16.0,
+    "error": null,
+    "llm_calls": [
+      {
+        "label": "plan",
+        "input_tokens": 9114,
+        "output_tokens": 241,
+        "total_tokens": 9355,
+        "prompt_chars": 39787
+      },
+      {
+        "label": "summarize",
+        "input_tokens": 105,
+        "output_tokens": 82,
+        "total_tokens": 187,
+        "prompt_chars": 439
+      }
+    ],
+    "token_summary": {
+      "total_input": 9219,
+      "total_output": 323,
+      "total": 9542,
+      "num_llm_calls": 2,
+      "tool_desc_tokens_est": 9008,
+      "plan_input_tokens": 9114
+    }
+  }
+]

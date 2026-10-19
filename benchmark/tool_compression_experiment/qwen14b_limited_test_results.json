@@ -1,0 +1,153 @@
+[
+  {
+    "id": 9,
+    "prompt": "Retrieve sensor data for Chiller 6's % Loaded from June 2020 at MAIN.",
+    "gold_steps": 3,
+    "gold_response": "#Task1: Retrieve the asset ID for \"Chiller 6\" at the \"MAIN\" site.\n#Agent1: IoTAgent\n#Tool1: assets\n#Args1: {\"site_name\": \"MAIN\"}\n#Dependency1: None\n#ExpectedOutput1: A list of assets, from which the ID for \"Chiller 6\" will be extracted.\n\n#Task2: Retrieve the sensor ID for \"% Loaded\" for the asset \"Chiller 6\" at the \"MAIN\" site.\n#Agent2: IoTAgent\n#Tool2: sensors\n#Args2: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_1}\"}\n#Dependency2: #S1\n#ExpectedOutput2: A list of sensors for \"Chiller 6\", from which the ID for \"% Loaded\" will be extracted.\n\n#Task3: Retrieve historical sensor data for \"Chiller 6\" at \"MAIN\" for the month of June 2020.\n#Agent3: IoTAgent\n#Tool3: history\n#Args3: {\"site_name\": \"MAIN\", \"asset_id\": \"{step_1}\", \"start\": \"2020-06-01T00:00:00Z\", \"final\": \"2020-06-30T23:59:59Z\"}\n#Dependency3: #S1\n#ExpectedOutput3: Historical sensor values for all sensors of \"Chiller 6\" for June 2020, including \"% Loaded\".",
+    "answer": "The sensor \"% Loaded\" for Chiller 6 at site MAIN does not exist; the correct sensor name is \"Chiller 6 Chiller % Loaded.\" No data was retrieved due to the mismatched sensor identifier.",
+    "plan": [
+      {
+        "step": 1,
+        "task": "Retrieve the list of available sites to confirm the MAIN site exists.",
+        "agent": "IoTAgent",
+        "tool": "sites",
+        "tool_args": {},
+        "dependencies": [],
+        "expected_output": "{\"sites\": [\"MAIN\"]}"
+      },
+      {
+        "step": 2,
+        "task": "Get the list of asset identifiers at the MAIN site to verify Chiller 6 exists.",
+        "agent": "IoTAgent",
+        "tool": "asset_ids",
+        "tool_args": {
+          "site_name": "MAIN"
+        },
+        "dependencies": [
+          1
+        ],
+        "expected_output": "{\"assets\": [\"Chiller 6\", ...]}"
+      },
+      {
+        "step": 3,
+        "task": "Check if the sensor \"% Loaded\" is measured by Chiller 6 at MAIN.",
+        "agent": "IoTAgent",
+        "tool": "measured_sensors",
+        "tool_args": {
+          "site_name": "MAIN",
+          "asset_id": "Chiller 6"
+        },
+        "dependencies": [
+          2
+        ],
+        "expected_output": "{\"sensors\": [\"% Loaded\", ...]}"
+      },
+      {
+        "step": 4,
+        "task": "Retrieve the telemetry data for Chiller 6's \"% Loaded\" sensor in June 2020.",
+        "agent": "IoTAgent",
+        "tool": "history",
+        "tool_args": {
+          "site_name": "MAIN",
+          "asset_id": "Chiller 6",
+          "start": "2020-06-01",
+          "end": "2020-07-01",
+          "sensors": [
+            "% Loaded"
+          ],
+          "limit": 1000
+        },
+        "dependencies": [
+          3
+        ],
+        "expected_output": "{\"observations\": [...], \"count\": 30, \"start\": \"2020-06-01T00:00:00Z\", \"end\": \"2020-07-01T00:00:00Z\"}"
+      }
+    ],
+    "history": [
+      {
+        "step": 1,
+        "task": "Retrieve the list of available sites to confirm the MAIN site exists.",
+        "agent": "IoTAgent",
+        "tool": "sites",
+        "tool_args": {},
+        "response": "{\n  \"sites\": [\n    \"MAIN\",\n    \"NORTH\"\n  ]\n}",
+        "error": null,
+        "success": true
+      },
+      {
+        "step": 2,
+        "task": "Get the list of asset identifiers at the MAIN site to verify Chiller 6 exists.",
+        "agent": "IoTAgent",
+        "tool": "asset_ids",
+        "tool_args": {
+          "site_name": "MAIN"
+        },
+        "response": "{\n  \"site_name\": \"MAIN\",\n  \"total_assets\": 5,\n  \"assets\": [\n    \"Chiller 6\",\n    \"Motor_01\",\n    \"PUMP3\",\n    \"hyd_1\",\n    \"mp_1\"\n  ],\n  \"message\": \"found 5 assets at site MAIN: Chiller 6, Motor_01, PUMP3, hyd_1, mp_1.\"\n}",
+        "error": null,
+        "success": true
+      },
+      {
+        "step": 3,
+        "task": "Check if the sensor \"% Loaded\" is measured by Chiller 6 at MAIN.",
+        "agent": "IoTAgent",
+        "tool": "measured_sensors",
+        "tool_args": {
+          "site_name": "MAIN",
+          "asset_id": "Chiller 6"
+        },
+        "response": "{\n  \"site_name\": \"MAIN\",\n  \"asset_id\": \"Chiller 6\",\n  \"total_sensors\": 12,\n  \"sensors\": [\n    \"Chiller 6 Chiller % Loaded\",\n    \"Chiller 6 Chiller Efficiency\",\n    \"Chiller 6 Condenser Water Flow\",\n    \"Chiller 6 Condenser Water Return To Tower Temperature\",\n    \"Chiller 6 Liquid Refrigerant Evaporator Temperature\",\n    \"Chiller 6 Power Input\",\n    \"Chiller 6 Return Temperature\",\n    \"Chiller 6 Run Status\",\n    \"Chiller 6 Schedule\",\n    \"Chiller 6 Setpoint Temperature\",\n    \"Chiller 6 Supply Temperature\",\n    \"Chiller 6 Tonnage\"\n  ],\n  \"message\": \"found 12 sensors for asset_id Chiller 6 and site_name MAIN: Chiller 6 Chiller % Loaded, Chiller 6 Chiller Efficiency, Chiller 6 Condenser Water Flow, Chiller 6 Condenser Water Return To Tower Temperature, Chiller 6 Liquid Refrigerant Evaporator Temperature, Chiller 6 Power Input, Chiller 6 Return Temperature, Chiller 6 Run Status, Chiller 6 Schedule, Chiller 6 Setpoint Temperature, Chiller 6 Supply Temperature, Chiller 6 Tonnage.\"\n}",
+        "error": null,
+        "success": true
+      },
+      {
+        "step": 4,
+        "task": "Retrieve the telemetry data for Chiller 6's \"% Loaded\" sensor in June 2020.",
+        "agent": "IoTAgent",
+        "tool": "history",
+        "tool_args": {
+          "site_name": "MAIN",
+          "asset_id": "Chiller 6",
+          "start": "2020-06-01",
+          "end": "2020-07-01",
+          "sensors": [
+            "% Loaded"
+          ],
+          "limit": 1000
+        },
+        "response": "{\n  \"error\": \"unknown sensors ['% Loaded'] for asset_id Chiller 6\"\n}",
+        "error": null,
+        "success": true
+      }
+    ],
+    "plan_steps": 4,
+    "steps_succeeded": 4,
+    "steps_failed": 0,
+    "all_succeeded": true,
+    "elapsed_seconds": 45.5,
+    "error": null,
+    "llm_calls": [
+      {
+        "label": "plan",
+        "input_tokens": 9129,
+        "output_tokens": 1307,
+        "total_tokens": 10436,
+        "prompt_chars": 39827
+      },
+      {
+        "label": "summarize",
+        "input_tokens": 626,
+        "output_tokens": 255,
+        "total_tokens": 881,
+        "prompt_chars": 2123
+      }
+    ],
+    "token_summary": {
+      "total_input": 9755,
+      "total_output": 1562,
+      "total": 11317,
+      "num_llm_calls": 2,
+      "tool_desc_tokens_est": 9012,
+      "plan_input_tokens": 9129
+    }
+  }
+]
